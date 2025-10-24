@@ -326,6 +326,28 @@ def get_memory_efficient_config() -> Config:
     return config
 
 
+def get_config(name: str = 'fast') -> Config:
+    """
+    Get configuration by name
+
+    Args:
+        name: Configuration name ('default', 'debug', 'fast', 'memory_efficient')
+
+    Returns:
+        Config object
+    """
+    configs = {
+        'default': get_default_config,
+        'debug': get_debug_config,
+        'fast': get_fast_config,
+        'memory_efficient': get_memory_efficient_config
+    }
+
+    if name not in configs:
+        raise ValueError(f"Unknown config: {name}. Available: {list(configs.keys())}")
+
+    return configs[name]()
+
 if __name__ == "__main__":
     # Test configurations
     config = get_default_config()

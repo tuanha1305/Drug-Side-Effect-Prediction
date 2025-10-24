@@ -482,6 +482,55 @@ class DataPreprocessor:
         logger.info("="*60)
 
 
+def load_preprocessing_assets(data_dir: str = 'data/processed') -> dict:
+    """
+    Load all preprocessing assets needed for inference
+
+    Args:
+        data_dir: Directory containing processed data
+
+    Returns:
+        dict with keys:
+            - vocab_file: Path to vocabulary file
+            - subword_map_file: Path to subword map file
+            - se_index: Side effect index array [num_se, seq_len]
+            - se_mask: Side effect mask array [num_se, seq_len]
+            - df_data: Main dataframe (optional)
+    """
+    import pickle
+    from pathlib import Path
+
+    data_dir = Path(data_dir)
+
+    # Load drug_side.pkl
+    drug_side_path = data_dir / 'drug_side.pkl'
+    if not drug_side_path.exists():
+        # Try parent directory
+        drug_side_path = data_dir.parent / 'raw' / 'drug_side.pkl'
+
+    with open(drug_side_path, 'rb') as f:
+        data = pickle.load(f)
+
+    assets = {
+        'se_index': data['se_index'],
+        'se_mask': data['se_mask'],
+        'df_data': data.get('df_data', None)
+    }
+
+    # Vocab and subword map files
+    vocab_file = data_dir.parent / 'raw' / 'drug_codes_chembl_freq_1500.txt'
+    subword_map_file = data_dir.parent / 'raw' / 'subword_units_map_chembl_freq_1500.csv'
+
+    if not vocab_file.exists():
+        vocab_file = Path('data/raw/drug_codes_chembl_freq_1500.txt')
+    if not subword_map_file.exists():
+        subword_map_file = Path('data/raw/subword_units_map_chembl_freq_1500.csv')
+
+    assets['vocab_file'] = str(vocab_file)
+    assets['subword_map_file'] = str(subword_map_file)
+
+    return assets
+
 if __name__ == "__main__":
     # Test preprocessing
     print("="*60)
