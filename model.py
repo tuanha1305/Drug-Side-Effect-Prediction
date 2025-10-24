@@ -237,9 +237,6 @@ class DrugSideEffectModel(nn.Module):
             drug_encoded = combined[:, :seq_len, :]
             se_encoded = combined[:, seq_len:, :]
 
-        print("drug_encoded shape:", drug_encoded.shape)
-        print("se_encoded shape:", se_encoded.shape)
-
         # === Interaction Layer ===
         # Outer product: [batch, drug_len, 1, hidden] * [batch, 1, se_len, hidden]
         # -> [batch, drug_len, se_len, hidden]
