@@ -190,10 +190,14 @@ class Config:
             import os
             self.dataloader.num_workers = min(4, os.cpu_count() or 1)
 
-        # Disable AMP if on CPU
+        # Disable AMP and compile if on CPU
         if self.device == "cpu":
-            self.training.use_amp = False
-            self.training.compile_model = False
+            if self.training.use_amp:
+                print("Info: Disabling AMP (not supported on CPU)")
+                self.training.use_amp = False
+            if self.training.compile_model:
+                print("Info: Disabling torch.compile on CPU (may cause warnings)")
+                self.training.compile_model = False
 
         # Check CUDA capability for bfloat16
         if self.training.amp_dtype == "bfloat16" and torch.cuda.is_available():
@@ -204,6 +208,11 @@ class Config:
         # Disable persistent_workers if num_workers is 0
         if self.dataloader.num_workers == 0:
             self.dataloader.persistent_workers = False
+
+        # Suppress torch.compile warnings on CPU
+        if self.device == "cpu":
+            import warnings
+            warnings.filterwarnings('ignore', message='.*cudagraph.*')
 
     def to_dict(self):
         """Convert config to dictionary"""
