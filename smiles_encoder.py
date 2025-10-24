@@ -7,7 +7,8 @@ import csv
 import codecs
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, List
+from pathlib import Path
+from typing import Tuple, Dict, List, Optional
 from functools import lru_cache
 import logging
 
@@ -23,10 +24,10 @@ class SMILESEncoder:
     """
 
     def __init__(
-            self,
-            vocab_path: str,
-            subword_map_path: str,
-            max_len: int = 50
+        self,
+        vocab_path: str,
+        subword_map_path: str,
+        max_len: int = 50
     ):
         """
         Initialize SMILES encoder
@@ -66,13 +67,33 @@ class SMILESEncoder:
         # Split SMILES using BPE
         tokens = self.bpe.process_line(smile).split()
 
-        try:
-            # Convert tokens to indices
-            indices = np.array([self.word2idx[token] for token in tokens])
-        except KeyError:
-            # Handle unknown tokens
-            logger.warning(f"Unknown token in SMILES: {smile[:50]}...")
-            indices = np.array([0])  # Use padding index
+        # Convert tokens to indices, handle unknown tokens gracefully
+        indices = []
+        has_unknown = False
+
+        for token in tokens:
+            if token in self.word2idx:
+                indices.append(self.word2idx[token])
+            else:
+                # Use <unk> token if available, otherwise use padding
+                if '<unk>' in self.word2idx:
+                    indices.append(self.word2idx['<unk>'])
+                else:
+                    indices.append(0)  # Use padding index
+                has_unknown = True
+
+        # Only log warning once per unique SMILES (use a set to track)
+        if has_unknown and not hasattr(self, '_warned_smiles'):
+            self._warned_smiles = set()
+
+        if has_unknown and smile not in getattr(self, '_warned_smiles', set()):
+            if len(getattr(self, '_warned_smiles', set())) < 10:  # Only show first 10 warnings
+                logger.warning(f"Unknown token(s) in SMILES: {smile[:50]}... (using fallback)")
+            elif len(self._warned_smiles) == 10:
+                logger.warning(f"... suppressing further unknown token warnings")
+            self._warned_smiles.add(smile)
+
+        indices = np.array(indices) if indices else np.array([0])
 
         length = len(indices)
 
@@ -93,8 +114,8 @@ class SMILESEncoder:
         return encoded.astype(np.int64), mask.astype(np.int64)
 
     def encode_batch(
-            self,
-            smiles_list: List[str]
+        self,
+        smiles_list: List[str]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Encode a batch of SMILES strings
@@ -177,11 +198,11 @@ class CachedSMILESEncoder:
     """
 
     def __init__(
-            self,
-            vocab_path: str,
-            subword_map_path: str,
-            max_len: int = 50,
-            cache_size: int = 10000
+        self,
+        vocab_path: str,
+        subword_map_path: str,
+        max_len: int = 50,
+        cache_size: int = 10000
     ):
         """
         Initialize cached SMILES encoder
@@ -235,7 +256,7 @@ class CachedSMILESEncoder:
 
 
 def load_drug_smiles(
-        file_path: str
+    file_path: str
 ) -> Tuple[Dict[str, int], List[str]]:
     """
     Load drug SMILES from CSV file
@@ -273,12 +294,12 @@ def load_drug_smiles(
 
 
 def create_smiles_encoder(
-        vocab_path: str,
-        subword_map_path: str,
-        max_len: int = 50,
-        use_cache: bool = True,
-        cache_size: int = 10000
-) -> CachedSMILESEncoder | SMILESEncoder:
+    vocab_path: str,
+    subword_map_path: str,
+    max_len: int = 50,
+    use_cache: bool = True,
+    cache_size: int = 10000
+) -> SMILESEncoder:
     """
     Factory function to create SMILES encoder
 
@@ -308,9 +329,9 @@ def create_smiles_encoder(
 
 
 def validate_smiles_encoding(
-        encoder: SMILESEncoder,
-        smiles_list: List[str],
-        n_samples: int = 5
+    encoder: SMILESEncoder,
+    smiles_list: List[str],
+    n_samples: int = 5
 ):
     """
     Validate SMILES encoding by encoding and decoding
@@ -330,9 +351,10 @@ def validate_smiles_encoding(
         decoded = encoder.decode(encoded)
 
         # Compare
-        logger.info(f"\nSample {i + 1}:")
+        logger.info(f"\nSample {i+1}:")
         logger.info(f"  Original:  {smile[:80]}")
         logger.info(f"  Decoded:   {decoded[:80]}")
         logger.info(f"  Encoded shape: {encoded.shape}")
         logger.info(f"  Mask sum: {mask.sum()}/{len(mask)}")
         logger.info(f"  Match: {smile == decoded}")
+

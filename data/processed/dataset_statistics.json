@@ -1,0 +1,120 @@
+{
+    "dataset": {
+        "num_samples": 74142,
+        "num_drugs": 750,
+        "num_side_effects": 994,
+        "num_interactions": 37071,
+        "num_positive": 37071,
+        "num_negative": 37071,
+        "positive_ratio": 0.5,
+        "label_mean": 1.7599606161150225,
+        "label_std": 1.8822194035574282,
+        "label_min": 0.0,
+        "label_max": 5.0
+    },
+    "drugs": {
+        "unique_smiles": 741,
+        "samples_per_smiles_mean": 100.05668016194332,
+        "samples_per_smiles_std": 65.88591306018756
+    },
+    "side_effects": {
+        "unique_side_effects": 994,
+        "samples_per_se_mean": 74.58953722334005,
+        "samples_per_se_std": 59.24495152462537
+    },
+    "cross_validation": {
+        "num_folds": 10,
+        "folds": [
+            {
+                "fold": 0,
+                "train_samples": 66727,
+                "val_samples": 7415,
+                "train_positive": 33363,
+                "val_positive": 3708,
+                "train_pos_ratio": 0.49999250678136287,
+                "val_pos_ratio": 0.5000674308833446
+            },
+            {
+                "fold": 1,
+                "train_samples": 66727,
+                "val_samples": 7415,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5000074932186371,
+                "val_pos_ratio": 0.4999325691166554
+            },
+            {
+                "fold": 2,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 3,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 4,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 5,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 6,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 7,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 8,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            },
+            {
+                "fold": 9,
+                "train_samples": 66728,
+                "val_samples": 7414,
+                "train_positive": 33364,
+                "val_positive": 3707,
+                "train_pos_ratio": 0.5,
+                "val_pos_ratio": 0.5
+            }
+        ]
+    }
+}
