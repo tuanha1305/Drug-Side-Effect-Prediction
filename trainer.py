@@ -439,9 +439,18 @@ class Trainer:
             is_best: Whether this is the best model
             epoch: Epoch number (for regular checkpoints)
         """
+
+        model_to_save = (
+            self.model._orig_mod
+            if hasattr(self.model, "_orig_mod") else
+            self.model.module
+            if hasattr(self.model, "module") else
+            self.model
+        )
+
         checkpoint = {
             'epoch': self.current_epoch,
-            'model_state_dict': self.model.state_dict(),
+            'model_state_dict': model_to_save.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_metric': self.best_metric,
             'config': self.config.to_dict(),
