@@ -255,8 +255,22 @@ class Config:
         import json
         with open(path, 'r') as f:
             config_dict = json.load(f)
-        # Reconstruct config from dict
-        # Note: This is a simplified version, you may need to handle Path objects
+        if "data" in config_dict and isinstance(config_dict["data"], dict):
+            config_dict["data"] = DataConfig(**config_dict["data"])
+
+        if "model" in config_dict and isinstance(config_dict["model"], dict):
+            config_dict["model"] = ModelConfig(**config_dict["model"])
+
+        if "training" in config_dict and isinstance(config_dict["training"], dict):
+            config_dict["training"] = TrainingConfig(**config_dict["training"])
+
+        if "dataloader" in config_dict and isinstance(config_dict["dataloader"], dict):
+            config_dict["dataloader"] = DataLoaderConfig(**config_dict["dataloader"])
+
+        if "paths" in config_dict and isinstance(config_dict["paths"], dict):
+            config_dict["paths"] = PathConfig(**config_dict["paths"])
+
+            # === Initialize main Config ===
         return cls(**config_dict)
 
 
