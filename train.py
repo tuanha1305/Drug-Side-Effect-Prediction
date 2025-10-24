@@ -349,6 +349,10 @@ def main():
     parser.add_argument('--output_dir', type=str, default='outputs',
                         help='Output directory')
 
+    # Model options
+    parser.add_argument('--use_cross_attention', action='store_true',
+                        help='Enable cross-attention between drug and side effect encoders')
+
     args = parser.parse_args()
 
     # Set seed
@@ -375,6 +379,9 @@ def main():
         config.training.use_amp = True
     if args.compile_model:
         config.training.compile_model = True
+    if args.use_cross_attention:
+        config.model.use_cross_attention = True
+
 
     # Update paths
     config.data.raw_data_dir = Path(args.data_dir)
