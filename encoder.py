@@ -70,7 +70,6 @@ class Embeddings(nn.Module):
 class SelfAttention(nn.Module):
     """
     Multi-head self-attention with optional Flash Attention support
-    Optimized for PyTorch 2.x
     """
     def __init__(
         self,
@@ -97,7 +96,6 @@ class SelfAttention(nn.Module):
 
         self.dropout = nn.Dropout(attention_probs_dropout_prob)
 
-        # PyTorch 2.x optimizations
         self.use_flash_attention = use_flash_attention
         self.use_sdpa = use_sdpa and hasattr(F, 'scaled_dot_product_attention')
 
@@ -140,9 +138,7 @@ class SelfAttention(nn.Module):
             if attention_mask.dim() == 3:
                 attention_mask = attention_mask.unsqueeze(1)
 
-        # Use PyTorch 2.x scaled_dot_product_attention if available
         if self.use_sdpa:
-            # PyTorch 2.x optimized attention (includes Flash Attention)
             # Note: mask format is different - None means no masking
             attn_mask = None
             if attention_mask is not None:
