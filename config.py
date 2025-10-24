@@ -256,7 +256,11 @@ class Config:
         with open(path, 'r') as f:
             config_dict = json.load(f)
         if "data" in config_dict and isinstance(config_dict["data"], dict):
-            config_dict["data"] = DataConfig(**config_dict["data"])
+            data_dict = config_dict["data"]
+            for key in ["data_root", "raw_data_dir", "processed_data_dir", "cache_dir"]:
+                if key in data_dict and isinstance(data_dict[key], str):
+                    data_dict[key] = Path(data_dict[key])
+            config_dict["data"] = DataConfig(**data_dict)
 
         if "model" in config_dict and isinstance(config_dict["model"], dict):
             config_dict["model"] = ModelConfig(**config_dict["model"])
