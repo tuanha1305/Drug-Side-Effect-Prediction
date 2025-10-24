@@ -268,7 +268,10 @@ class Config:
             config_dict["dataloader"] = DataLoaderConfig(**config_dict["dataloader"])
 
         if "paths" in config_dict and isinstance(config_dict["paths"], dict):
-            config_dict["paths"] = PathConfig(**config_dict["paths"])
+            paths_dict = config_dict["paths"]
+            for key, value in paths_dict.items():
+                paths_dict[key] = Path(value)  # convert str → Path
+            config_dict["paths"] = PathConfig(**paths_dict)
 
             # === Initialize main Config ===
         return cls(**config_dict)
