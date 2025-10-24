@@ -115,103 +115,74 @@ class SelfAttention(nn.Module):
         return x.permute(0, 2, 1, 3)
 
     def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        fusion: bool = False
+            self,
+            hidden_states: torch.Tensor,
+            attention_mask: Optional[torch.Tensor] = None,
+            fusion: bool = False
     ) -> torch.Tensor:
         """
         Args:
             hidden_states: [batch_size, seq_len, hidden_size]
-            attention_mask: [batch_size, 1, 1, seq_len] (1 for valid, 0 for masked)
+            attention_mask: [batch_size, 1, 1, seq_len] or [batch_size, seq_len, seq_len]
             fusion: whether this is cross-attention (not used in current implementation)
         Returns:
             context_layer: [batch_size, seq_len, hidden_size]
         """
-        # Generate Q, K, V
+        # === 1. Compute Q, K, V ===
         query_layer = self.transpose_for_scores(self.query(hidden_states))
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
-        
-        # Prepare attention mask if provided
+        # [B, H, L, D]
+
+        # === 2. Prepare attention mask ===
+        attn_mask = None
         if attention_mask is not None:
-            # Convert mask: 1 -> 0 (valid), 0 -> -inf (masked)
-            attention_mask = attention_mask.to(dtype=hidden_states.dtype)
-            # attention_mask should be [batch_size, 1, 1, seq_len]
-            if attention_mask.dim() == 3:
-                attention_mask = attention_mask.unsqueeze(1)
-        
-        # Use PyTorch 2.x scaled_dot_product_attention if available
+            # Convert to boolean mask (True = mask out, False = attend)
+            # Allow multiple mask shapes: [B,L], [B,L,L], [B,1,1,L], [B,1,L,L]
+            if attention_mask.dim() == 2:
+                # [B, L] -> [B, 1, 1, L]
+                attn_mask = (attention_mask == 0).unsqueeze(1).unsqueeze(2)
+            elif attention_mask.dim() == 3:
+                # [B, L, L] -> [B, 1, L, L]
+                attn_mask = (attention_mask == 0).unsqueeze(1)
+            elif attention_mask.dim() == 4:
+                # [B, 1, 1, L] or [B, 1, L, L]
+                attn_mask = (attention_mask == 0)
+            else:
+                raise ValueError(f"Unsupported attention_mask shape: {attention_mask.shape}")
+
+            # Expand mask across attention heads: [B, 1, L, L] -> [B, H, L, L]
+            if attn_mask.size(1) == 1 and query_layer.size(1) > 1:
+                attn_mask = attn_mask.expand(-1, query_layer.size(1), -1, -1)
+
+        # === 3. Scaled Dot-Product Attention (PyTorch 2.x optimized) ===
         if self.use_sdpa:
-            # PyTorch 2.x optimized attention (includes Flash Attention)
-            attn_mask = None
-            if attention_mask is not None:
-                # SDPA expects boolean mask: True = ignore, False = attend
-                # Input attention_mask: [batch, seq] with 1=valid, 0=padding
-                
-                # Get original shape
-                if attention_mask.dim() == 2:
-                    # [batch, seq] -> create [batch, 1, 1, seq] for broadcasting
-                    # Then create [batch, seq, seq] mask
-                    batch_size, seq_len = attention_mask.shape
-                    
-                    # Method 1: Simple outer product approach
-                    # [batch, seq, 1] * [batch, 1, seq] -> [batch, seq, seq]
-                    attn_mask = attention_mask.unsqueeze(2) * attention_mask.unsqueeze(1)
-                    # Convert: 0 = mask out (padding), 1 = attend
-                    # SDPA wants: True = mask out, so invert
-                    attn_mask = (attn_mask == 0)
-                elif attention_mask.dim() == 3:
-                    # Already [batch, 1, seq] or [batch, seq, seq]
-                    if attention_mask.size(1) == 1:
-                        # [batch, 1, seq] -> [batch, seq, seq]
-                        attn_mask = attention_mask.squeeze(1).unsqueeze(2) * attention_mask.squeeze(1).unsqueeze(1)
-                        attn_mask = (attn_mask == 0)
-                    else:
-                        # Already [batch, seq, seq]
-                        attn_mask = (attention_mask == 0)
-                elif attention_mask.dim() == 4:
-                    # [batch, 1, 1, seq] -> [batch, seq, seq]
-                    attention_mask = attention_mask.squeeze(1).squeeze(1)
-                    attn_mask = attention_mask.unsqueeze(2) * attention_mask.unsqueeze(1)
-                    attn_mask = (attn_mask == 0)
-                
-                # Check if all False (no actual masking)
-                if attn_mask is not None and not attn_mask.any():
-                    attn_mask = None
-            
             context_layer = F.scaled_dot_product_attention(
                 query_layer,
                 key_layer,
                 value_layer,
-                attn_mask=attn_mask,
+                attn_mask=attn_mask,  # [B, H, L, L]
                 dropout_p=self.dropout.p if self.training else 0.0,
                 is_causal=False
             )
         else:
-            # Manual attention computation
-            attention_scores = torch.matmul(
-                query_layer,
-                key_layer.transpose(-1, -2)
-            )
+            # Manual fallback (for PyTorch < 2.0 or no SDPA)
+            attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
             attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-            
-            # Apply attention mask
-            if attention_mask is not None:
-                attention_scores = attention_scores + attention_mask
-            
-            # Softmax
+
+            if attn_mask is not None:
+                # attn_mask = True where masked -> convert to -inf
+                attention_scores = attention_scores.masked_fill(attn_mask, float('-inf'))
+
             attention_probs = F.softmax(attention_scores, dim=-1)
             attention_probs = self.dropout(attention_probs)
-            
-            # Apply attention to values
             context_layer = torch.matmul(attention_probs, value_layer)
-        
-        # Reshape back
+
+        # === 4. Merge heads back ===
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
-        
+
         return context_layer
 
 
