@@ -11,6 +11,7 @@ import pickle
 from pathlib import Path
 import logging
 import json
+import torch.serialization
 
 from config import Config
 from model import create_model
@@ -55,7 +56,8 @@ def load_model_from_checkpoint(
     model = create_model(config.model, device=device)
 
     # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    torch.serialization.add_safe_globals([np.core.multiarray.scalar])
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['model_state_dict'])
 
     # Get checkpoint info
