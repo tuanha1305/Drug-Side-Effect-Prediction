@@ -146,24 +146,38 @@ class SelfAttention(nn.Module):
             # PyTorch 2.x optimized attention (includes Flash Attention)
             attn_mask = None
             if attention_mask is not None:
-                # Convert to boolean mask for SDPA
-                # Input mask: [batch_size, seq_len] where 1=valid, 0=padding
-                # SDPA expects: [batch_size, seq_len, seq_len] or [batch_size, num_heads, seq_len, seq_len]
-                # where True = mask out (opposite of input)
+                # SDPA expects boolean mask: True = ignore, False = attend
+                # Input attention_mask: [batch, seq] with 1=valid, 0=padding
                 
-                # Create causal mask [batch, seq, seq]
-                batch_size, seq_len = attention_mask.shape[:2]
+                # Get original shape
                 if attention_mask.dim() == 2:
-                    # [batch, seq] -> [batch, 1, seq]
-                    attention_mask = attention_mask.unsqueeze(1)
+                    # [batch, seq] -> create [batch, 1, 1, seq] for broadcasting
+                    # Then create [batch, seq, seq] mask
+                    batch_size, seq_len = attention_mask.shape
+                    
+                    # Method 1: Simple outer product approach
+                    # [batch, seq, 1] * [batch, 1, seq] -> [batch, seq, seq]
+                    attn_mask = attention_mask.unsqueeze(2) * attention_mask.unsqueeze(1)
+                    # Convert: 0 = mask out (padding), 1 = attend
+                    # SDPA wants: True = mask out, so invert
+                    attn_mask = (attn_mask == 0)
+                elif attention_mask.dim() == 3:
+                    # Already [batch, 1, seq] or [batch, seq, seq]
+                    if attention_mask.size(1) == 1:
+                        # [batch, 1, seq] -> [batch, seq, seq]
+                        attn_mask = attention_mask.squeeze(1).unsqueeze(2) * attention_mask.squeeze(1).unsqueeze(1)
+                        attn_mask = (attn_mask == 0)
+                    else:
+                        # Already [batch, seq, seq]
+                        attn_mask = (attention_mask == 0)
+                elif attention_mask.dim() == 4:
+                    # [batch, 1, 1, seq] -> [batch, seq, seq]
+                    attention_mask = attention_mask.squeeze(1).squeeze(1)
+                    attn_mask = attention_mask.unsqueeze(2) * attention_mask.unsqueeze(1)
+                    attn_mask = (attn_mask == 0)
                 
-                # Broadcast to [batch, seq, seq]
-                attn_mask = attention_mask.unsqueeze(-1) * attention_mask.unsqueeze(-2)
-                # Convert to boolean: True = mask out (positions to ignore)
-                attn_mask = (attn_mask == 0)
-                
-                # Check if all False (no masking needed)
-                if not attn_mask.any():
+                # Check if all False (no actual masking)
+                if attn_mask is not None and not attn_mask.any():
                     attn_mask = None
             
             context_layer = F.scaled_dot_product_attention(
@@ -351,7 +365,7 @@ class EncoderLayer(nn.Module):
         return layer_output
 
 
-class EncoderMultipleLayers(nn.Module):
+class Encoder_MultipleLayers(nn.Module):
     """
     Multi-layer Transformer encoder
     Optimized for PyTorch 2.x with gradient checkpointing support
@@ -368,7 +382,7 @@ class EncoderMultipleLayers(nn.Module):
         use_sdpa: bool = True,
         use_gradient_checkpointing: bool = False
     ):
-        super(EncoderMultipleLayers, self).__init__()
+        super(Encoder_MultipleLayers, self).__init__()
         
         # Create encoder layers
         self.layer = nn.ModuleList([

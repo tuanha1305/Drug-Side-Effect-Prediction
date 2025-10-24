@@ -34,7 +34,7 @@ Hai lớp embedding này chuyển đổi chỉ số token (thuốc hoặc tác d
 
 ### `self.encoder_drug` và `self.encoder_side`
 
-Hai khối encoder độc lập — mỗi bên một Transformer nhiều tầng (`EncoderMultipleLayers`).
+Hai khối encoder độc lập — mỗi bên một Transformer nhiều tầng (`Encoder_MultipleLayers`).
 
 Chúng học **biểu diễn ngữ cảnh nội tại**:
 

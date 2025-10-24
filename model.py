@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
 
-from encoder import Embeddings, EncoderMultipleLayers
+from encoder import Embeddings, Encoder_MultipleLayers
 from config import ModelConfig
 
 
@@ -50,7 +50,7 @@ class DrugSideEffectModel(nn.Module):
         )
 
         # Drug Transformer Encoder
-        self.encoder_drug = EncoderMultipleLayers(
+        self.encoder_drug = Encoder_MultipleLayers(
             n_layer=config.num_encoder_layers,
             hidden_size=config.embedding_dim,
             intermediate_size=config.intermediate_size,
@@ -63,7 +63,7 @@ class DrugSideEffectModel(nn.Module):
         )
 
         # Side Effect Transformer Encoder
-        self.encoder_side = EncoderMultipleLayers(
+        self.encoder_side = Encoder_MultipleLayers(
             n_layer=config.num_encoder_layers,
             hidden_size=config.embedding_dim,
             intermediate_size=config.intermediate_size,
@@ -78,7 +78,7 @@ class DrugSideEffectModel(nn.Module):
         # Optional Cross-Attention Encoder
         self.use_cross_attention = config.use_cross_attention
         if self.use_cross_attention:
-            self.cross_attention_encoder = EncoderMultipleLayers(
+            self.cross_attention_encoder = Encoder_MultipleLayers(
                 n_layer=1,  # Single layer for cross-attention
                 hidden_size=config.embedding_dim,
                 intermediate_size=config.intermediate_size,
