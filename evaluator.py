@@ -6,6 +6,7 @@ Comprehensive metrics for both regression and classification tasks
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 from typing import Dict, List, Tuple, Optional
 from sklearn.metrics import (
     roc_auc_score,
@@ -36,10 +37,10 @@ class Evaluator:
     """
 
     def __init__(
-            self,
-            model: DrugSideEffectModel,
-            device: str = 'cpu',
-            threshold: float = 0.5
+        self,
+        model: DrugSideEffectModel,
+        device: str = 'cpu',
+        threshold: float = 0.5
     ):
         """
         Initialize evaluator
@@ -57,9 +58,9 @@ class Evaluator:
 
     @torch.no_grad()
     def predict(
-            self,
-            data_loader: DataLoader,
-            return_embeddings: bool = False
+        self,
+        data_loader: DataLoader,
+        return_embeddings: bool = False
     ) -> Dict[str, np.ndarray]:
         """
         Get predictions from model
@@ -110,9 +111,9 @@ class Evaluator:
         return results
 
     def evaluate_regression(
-            self,
-            predictions: np.ndarray,
-            labels: np.ndarray
+        self,
+        predictions: np.ndarray,
+        labels: np.ndarray
     ) -> Dict[str, float]:
         """
         Evaluate regression metrics
@@ -158,10 +159,10 @@ class Evaluator:
         return metrics
 
     def evaluate_classification(
-            self,
-            predictions: np.ndarray,
-            labels: np.ndarray,
-            threshold: Optional[float] = None
+        self,
+        predictions: np.ndarray,
+        labels: np.ndarray,
+        threshold: Optional[float] = None
     ) -> Dict[str, float]:
         """
         Evaluate classification metrics
@@ -223,10 +224,10 @@ class Evaluator:
         return metrics
 
     def evaluate_per_drug(
-            self,
-            predictions: np.ndarray,
-            labels: np.ndarray,
-            drug_ids: np.ndarray
+        self,
+        predictions: np.ndarray,
+        labels: np.ndarray,
+        drug_ids: np.ndarray
     ) -> Dict[str, float]:
         """
         Evaluate metrics per drug (average across drugs)
@@ -277,10 +278,10 @@ class Evaluator:
         return metrics
 
     def evaluate(
-            self,
-            data_loader: DataLoader,
-            evaluate_per_drug: bool = False,
-            drug_ids: Optional[np.ndarray] = None
+        self,
+        data_loader: DataLoader,
+        evaluate_per_drug: bool = False,
+        drug_ids: Optional[np.ndarray] = None
     ) -> Dict[str, float]:
         """
         Complete evaluation with all metrics
@@ -335,9 +336,9 @@ class Evaluator:
         Args:
             metrics: Dictionary of metrics
         """
-        print("\n" + "=" * 60)
+        print("\n" + "="*60)
         print("Evaluation Metrics")
-        print("=" * 60)
+        print("="*60)
 
         # Regression metrics
         if 'rmse' in metrics:
@@ -378,13 +379,13 @@ class Evaluator:
             print(f"  Positive:       {metrics['num_positive']} ({metrics['positive_ratio']:.2%})")
             print(f"  Negative:       {metrics['num_negative']}")
 
-        print("=" * 60 + "\n")
+        print("="*60 + "\n")
 
     def save_predictions(
-            self,
-            predictions: np.ndarray,
-            labels: np.ndarray,
-            output_path: str
+        self,
+        predictions: np.ndarray,
+        labels: np.ndarray,
+        output_path: str
     ):
         """
         Save predictions to file
@@ -409,9 +410,9 @@ class Evaluator:
 
 
 def compare_models(
-        evaluators: List[Evaluator],
-        data_loader: DataLoader,
-        model_names: Optional[List[str]] = None
+    evaluators: List[Evaluator],
+    data_loader: DataLoader,
+    model_names: Optional[List[str]] = None
 ) -> pd.DataFrame:
     """
     Compare multiple models
@@ -427,7 +428,7 @@ def compare_models(
     import pandas as pd
 
     if model_names is None:
-        model_names = [f"Model {i + 1}" for i in range(len(evaluators))]
+        model_names = [f"Model {i+1}" for i in range(len(evaluators))]
 
     results = []
 
@@ -449,9 +450,9 @@ if __name__ == "__main__":
     from model import create_model
     from torch.utils.data import TensorDataset, DataLoader
 
-    print("=" * 60)
+    print("="*60)
     print("Testing Evaluator")
-    print("=" * 60)
+    print("="*60)
 
     # Get config
     config = get_default_config()
@@ -529,6 +530,6 @@ if __name__ == "__main__":
     )
     print("✓ Save predictions works")
 
-    print("\n" + "=" * 60)
+    print("\n" + "="*60)
     print("✓ All evaluator tests passed!")
-    print("=" * 60)
+    print("="*60)
