@@ -351,7 +351,7 @@ class EncoderLayer(nn.Module):
         return layer_output
 
 
-class Encoder_MultipleLayers(nn.Module):
+class EncoderMultipleLayers(nn.Module):
     """
     Multi-layer Transformer encoder
     Optimized for PyTorch 2.x with gradient checkpointing support
@@ -368,7 +368,7 @@ class Encoder_MultipleLayers(nn.Module):
         use_sdpa: bool = True,
         use_gradient_checkpointing: bool = False
     ):
-        super(Encoder_MultipleLayers, self).__init__()
+        super(EncoderMultipleLayers, self).__init__()
         
         # Create encoder layers
         self.layer = nn.ModuleList([
