@@ -120,7 +120,7 @@ class TrainingConfig:
     compile_mode: str = "reduce-overhead"  # "default", "reduce-overhead", "max-autotune"
     
     # Early stopping
-    early_stopping: bool = True
+    early_stopping: bool = False
     patience: int = 20
     min_delta: float = 1e-4
     
