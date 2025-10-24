@@ -413,7 +413,7 @@ def compare_models(
     evaluators: List[Evaluator],
     data_loader: DataLoader,
     model_names: Optional[List[str]] = None
-) -> pd.DataFrame:
+):
     """
     Compare multiple models
 
@@ -425,7 +425,6 @@ def compare_models(
     Returns:
         comparison_df: DataFrame with comparison
     """
-    import pandas as pd
 
     if model_names is None:
         model_names = [f"Model {i+1}" for i in range(len(evaluators))]
