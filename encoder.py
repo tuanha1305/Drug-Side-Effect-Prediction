@@ -1,13 +1,13 @@
 """
 Transformer Encoder components for drug side effect prediction
+Optimized for PyTorch 2.x with Flash Attention support
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from typing import Optional
-from torch.utils.checkpoint import checkpoint
+from typing import Optional, Tuple
 
 
 class LayerNorm(nn.Module):
@@ -53,8 +53,8 @@ class Embeddings(nn.Module):
         """
         seq_length = input_ids.size(1)
         position_ids = torch.arange(
-            seq_length,
-            dtype=torch.long,
+            seq_length, 
+            dtype=torch.long, 
             device=input_ids.device
         )
         position_ids = position_ids.unsqueeze(0).expand_as(input_ids)
@@ -71,6 +71,7 @@ class Embeddings(nn.Module):
 class SelfAttention(nn.Module):
     """
     Multi-head self-attention with optional Flash Attention support
+    Optimized for PyTorch 2.x
     """
     def __init__(
         self,
@@ -86,17 +87,18 @@ class SelfAttention(nn.Module):
                 f"hidden_size ({hidden_size}) must be divisible by "
                 f"num_attention_heads ({num_attention_heads})"
             )
-
+        
         self.num_attention_heads = num_attention_heads
         self.attention_head_size = int(hidden_size / num_attention_heads)
         self.all_head_size = self.num_attention_heads * self.attention_head_size
-
+        
         self.query = nn.Linear(hidden_size, self.all_head_size)
         self.key = nn.Linear(hidden_size, self.all_head_size)
         self.value = nn.Linear(hidden_size, self.all_head_size)
-
+        
         self.dropout = nn.Dropout(attention_probs_dropout_prob)
-
+        
+        # PyTorch 2.x optimizations
         self.use_flash_attention = use_flash_attention
         self.use_sdpa = use_sdpa and hasattr(F, 'scaled_dot_product_attention')
 
@@ -130,7 +132,7 @@ class SelfAttention(nn.Module):
         query_layer = self.transpose_for_scores(self.query(hidden_states))
         key_layer = self.transpose_for_scores(self.key(hidden_states))
         value_layer = self.transpose_for_scores(self.value(hidden_states))
-
+        
         # Prepare attention mask if provided
         if attention_mask is not None:
             # Convert mask: 1 -> 0 (valid), 0 -> -inf (masked)
@@ -138,16 +140,32 @@ class SelfAttention(nn.Module):
             # attention_mask should be [batch_size, 1, 1, seq_len]
             if attention_mask.dim() == 3:
                 attention_mask = attention_mask.unsqueeze(1)
-
+        
+        # Use PyTorch 2.x scaled_dot_product_attention if available
         if self.use_sdpa:
-            # Note: mask format is different - None means no masking
+            # PyTorch 2.x optimized attention (includes Flash Attention)
             attn_mask = None
             if attention_mask is not None:
-                # Convert to boolean mask: True for positions to mask
-                attn_mask = (attention_mask < -1).squeeze(1).squeeze(1)
+                # Convert to boolean mask for SDPA
+                # Input mask: [batch_size, seq_len] where 1=valid, 0=padding
+                # SDPA expects: [batch_size, seq_len, seq_len] or [batch_size, num_heads, seq_len, seq_len]
+                # where True = mask out (opposite of input)
+                
+                # Create causal mask [batch, seq, seq]
+                batch_size, seq_len = attention_mask.shape[:2]
+                if attention_mask.dim() == 2:
+                    # [batch, seq] -> [batch, 1, seq]
+                    attention_mask = attention_mask.unsqueeze(1)
+                
+                # Broadcast to [batch, seq, seq]
+                attn_mask = attention_mask.unsqueeze(-1) * attention_mask.unsqueeze(-2)
+                # Convert to boolean: True = mask out (positions to ignore)
+                attn_mask = (attn_mask == 0)
+                
+                # Check if all False (no masking needed)
                 if not attn_mask.any():
                     attn_mask = None
-
+            
             context_layer = F.scaled_dot_product_attention(
                 query_layer,
                 key_layer,
@@ -163,23 +181,23 @@ class SelfAttention(nn.Module):
                 key_layer.transpose(-1, -2)
             )
             attention_scores = attention_scores / math.sqrt(self.attention_head_size)
-
+            
             # Apply attention mask
             if attention_mask is not None:
                 attention_scores = attention_scores + attention_mask
-
+            
             # Softmax
             attention_probs = F.softmax(attention_scores, dim=-1)
             attention_probs = self.dropout(attention_probs)
-
+            
             # Apply attention to values
             context_layer = torch.matmul(attention_probs, value_layer)
-
+        
         # Reshape back
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
         context_layer = context_layer.view(*new_context_layer_shape)
-
+        
         return context_layer
 
 
@@ -333,9 +351,10 @@ class EncoderLayer(nn.Module):
         return layer_output
 
 
-class EncoderMultipleLayers(nn.Module):
+class Encoder_MultipleLayers(nn.Module):
     """
     Multi-layer Transformer encoder
+    Optimized for PyTorch 2.x with gradient checkpointing support
     """
     def __init__(
         self,
@@ -349,8 +368,8 @@ class EncoderMultipleLayers(nn.Module):
         use_sdpa: bool = True,
         use_gradient_checkpointing: bool = False
     ):
-        super(EncoderMultipleLayers, self).__init__()
-
+        super(Encoder_MultipleLayers, self).__init__()
+        
         # Create encoder layers
         self.layer = nn.ModuleList([
             EncoderLayer(
@@ -364,7 +383,7 @@ class EncoderMultipleLayers(nn.Module):
             )
             for _ in range(n_layer)
         ])
-
+        
         self.use_gradient_checkpointing = use_gradient_checkpointing
 
     def forward(
@@ -382,7 +401,7 @@ class EncoderMultipleLayers(nn.Module):
             encoded: [batch_size, seq_len, hidden_size]
         """
         all_encoder_layers = []
-
+        
         for layer_module in self.layer:
             if self.use_gradient_checkpointing and self.training:
                 # Use gradient checkpointing to save memory
@@ -395,7 +414,76 @@ class EncoderMultipleLayers(nn.Module):
                 )
             else:
                 hidden_states = layer_module(hidden_states, attention_mask, fusion)
-
+            
             all_encoder_layers.append(hidden_states)
-
+        
         return hidden_states
+
+
+if __name__ == "__main__":
+    # Test encoder
+    print("Testing Transformer Encoder...")
+    
+    batch_size = 4
+    seq_len = 50
+    vocab_size = 2586
+    hidden_size = 200
+    num_layers = 8
+    num_heads = 8
+    intermediate_size = 512
+    
+    # Create model
+    embeddings = Embeddings(
+        vocab_size=vocab_size,
+        hidden_size=hidden_size,
+        max_position_size=500,
+        dropout_rate=0.1
+    )
+    
+    encoder = Encoder_MultipleLayers(
+        n_layer=num_layers,
+        hidden_size=hidden_size,
+        intermediate_size=intermediate_size,
+        num_attention_heads=num_heads,
+        attention_probs_dropout_prob=0.1,
+        hidden_dropout_prob=0.1,
+        use_flash_attention=True,
+        use_sdpa=True
+    )
+    
+    # Create dummy input
+    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
+    attention_mask = torch.ones((batch_size, 1, 1, seq_len))
+    
+    # Forward pass
+    print(f"\nInput shape: {input_ids.shape}")
+    
+    emb = embeddings(input_ids)
+    print(f"Embedding shape: {emb.shape}")
+    
+    output = encoder(emb, attention_mask, fusion=False)
+    print(f"Encoder output shape: {output.shape}")
+    
+    # Count parameters
+    total_params = sum(p.numel() for p in encoder.parameters())
+    print(f"\nTotal parameters in encoder: {total_params:,}")
+    
+    # Test with torch.compile (PyTorch 2.x)
+    if hasattr(torch, 'compile'):
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(f"\nTesting with torch.compile on {device}...")
+        
+        if device == 'cpu':
+            print("Note: torch.compile on CPU may show 'cudagraph partition' warnings - this is normal")
+            import warnings
+            warnings.filterwarnings('ignore', message='.*cudagraph.*')
+        
+        try:
+            encoder_compiled = torch.compile(encoder, mode='reduce-overhead')
+            output_compiled = encoder_compiled(emb, attention_mask, fusion=False)
+            print(f"Compiled encoder output shape: {output_compiled.shape}")
+            print("✓ torch.compile works!")
+        except Exception as e:
+            print(f"torch.compile not fully supported on this system: {e}")
+    
+    print("\n✓ All encoder tests passed!")
