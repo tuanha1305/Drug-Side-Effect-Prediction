@@ -138,19 +138,32 @@ python evaluate.py --checkpoint checkpoints/best_model.pth
 ## Model Architecture
 
 ```
-Input: Drug SMILES + Side Effect ID
-  ↓
-Drug Encoder (Transformer) ←→ Side Effect Encoder (Transformer)
-  ↓                              ↓
-Drug Embedding (50 x 200)    SE Embedding (50 x 200)
-  ↓                              ↓
-        Interaction Layer (Outer Product)
-                 ↓
-         Conv2D (1→3 channels)
-                 ↓
-         Decoder MLP (6912→512→64→32→1)
-                 ↓
-              Output
+Input: Drug SMILES + Side Effect
+         ↓
+    Embeddings (Word + Position)
+         ↓
+┌────────────────┬────────────────┐
+│  Drug Encoder  │  SE Encoder    │
+│  (Transformer) │  (Transformer) │
+│   8 layers     │   8 layers     │
+└────────────────┴────────────────┘
+         ↓
+   Cross-Attention (Optional)
+         ↓
+   Interaction Layer
+   (Outer Product)
+    [50 x 50 x 200]
+         ↓
+     Sum → [50 x 50]
+         ↓
+    Conv2D (1→3)
+         ↓
+    Flatten → [6912]
+         ↓
+       MLP Decoder
+    (6912→512→64→32→1)
+         ↓
+      Prediction
 ```
 
 ### Key Components:
