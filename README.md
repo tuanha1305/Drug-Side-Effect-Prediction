@@ -40,57 +40,6 @@ drug-side-effect-prediction/
 └── README.md                       # Documentation
 ```
 
-## Tối ưu hóa PyTorch 2.x
-
-### 1. torch.compile()
-```python
-model = DrugSideEffectModel()
-model = torch.compile(model, mode='reduce-overhead')
-```
-
-### 2. Mixed Precision Training với torch.amp
-```python
-scaler = torch.cuda.amp.GradScaler()
-with torch.cuda.amp.autocast():
-    output = model(drug, se, drug_mask, se_mask)
-    loss = criterion(output, target)
-```
-
-### 3. Optimized DataLoader
-```python
-DataLoader(
-    dataset,
-    batch_size=128,
-    num_workers=4,
-    pin_memory=True,
-    persistent_workers=True,  # PyTorch 2.x feature
-    prefetch_factor=2
-)
-```
-
-### 4. Flash Attention (nếu có GPU hỗ trợ)
-```python
-# Sử dụng F.scaled_dot_product_attention thay vì attention thủ công
-attention_output = F.scaled_dot_product_attention(
-    query, key, value, attn_mask=mask
-)
-```
-
-### 5. Gradient Checkpointing (tiết kiệm memory)
-```python
-from torch.utils.checkpoint import checkpoint
-output = checkpoint(self.encoder_layer, x, mask)
-```
-
-### 6. Fused Optimizer (AdamW fused trong PyTorch 2)
-```python
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=1e-4,
-    fused=True  # Faster trên CUDA
-)
-```
-
 ## Cài đặt
 
 ```bash
