@@ -7,8 +7,7 @@ import csv
 import codecs
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Tuple, Dict, List, Optional
+from typing import Tuple, Dict, List
 from functools import lru_cache
 import logging
 
@@ -279,7 +278,7 @@ def create_smiles_encoder(
         max_len: int = 50,
         use_cache: bool = True,
         cache_size: int = 10000
-) -> SMILESEncoder:
+) -> CachedSMILESEncoder | SMILESEncoder:
     """
     Factory function to create SMILES encoder
 
