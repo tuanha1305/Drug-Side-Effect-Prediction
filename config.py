@@ -204,6 +204,10 @@ class Config:
             if self.training.compile_model:
                 print("Info: Disabling torch.compile on CPU (may cause warnings)")
                 self.training.compile_model = False
+            # Disable multiprocessing on CPU due to pickling issues with cached encoder
+            if self.dataloader.num_workers > 0:
+                print(f"Info: Disabling multiprocessing on CPU (num_workers: {self.dataloader.num_workers} -> 0)")
+                self.dataloader.num_workers = 0
         
         # Check CUDA capability for bfloat16
         if self.training.amp_dtype == "bfloat16" and torch.cuda.is_available():
