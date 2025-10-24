@@ -194,6 +194,10 @@ def train_fold(
     logger.info("Creating model...")
     model = create_model(config.model, device=config.device)
 
+    if config.training.compile_model:
+        print("Compiling model for inference only...")
+        model = torch.compile(model, mode="reduce-overhead")
+
     # Count parameters
     param_counts = model.count_parameters()
     logger.info(f"Model parameters:")
