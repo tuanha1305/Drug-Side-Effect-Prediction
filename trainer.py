@@ -176,7 +176,7 @@ class Trainer:
     def _create_criterion(self) -> nn.Module:
         """Create loss function"""
         # MSE Loss for regression
-        return nn.MSELoss()
+        return nn.BCEWithLogitsLoss()
 
     def train_epoch(self) -> float:
         """
@@ -278,14 +278,14 @@ class Trainer:
     @torch.no_grad()
     def validate(self) -> Dict[str, float]:
         """
-        Validate model
+        Validate model on validation set
 
         Returns:
             metrics: Dictionary of validation metrics
         """
         self.model.eval()
         total_loss = 0.0
-        all_preds = []
+        all_probs = []
         all_labels = []
 
         for batch in tqdm(self.val_loader, desc="Validating", leave=False):
@@ -309,36 +309,50 @@ class Trainer:
 
             total_loss += loss.item()
 
+            # Convert logits -> probabilities for metrics
+            probs = torch.sigmoid(output)
+
             # Collect predictions and labels
-            all_preds.append(output.squeeze().cpu().numpy())
+            all_probs.append(probs.squeeze().cpu().numpy())
             all_labels.append(label.cpu().numpy())
 
-        # Calculate metrics
+        # Concatenate all batches
         avg_loss = total_loss / len(self.val_loader)
-        all_preds = np.concatenate(all_preds)
+        all_probs = np.concatenate(all_probs)
         all_labels = np.concatenate(all_labels)
 
-        # Calculate additional metrics
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
+        # ===== Metrics on probability scale =====
+        from sklearn.metrics import (
+            mean_squared_error,
+            mean_absolute_error,
+            roc_auc_score,
+            average_precision_score
+        )
         from scipy.stats import pearsonr, spearmanr
 
-        rmse = np.sqrt(mean_squared_error(all_labels, all_preds))
-        mae = mean_absolute_error(all_labels, all_preds)
+        rmse = np.sqrt(mean_squared_error(all_labels, all_probs))
+        mae = mean_absolute_error(all_labels, all_probs)
 
         # Only calculate correlation if there's variance
-        if len(np.unique(all_labels)) > 1 and len(np.unique(all_preds)) > 1:
-            pearson, _ = pearsonr(all_labels, all_preds)
-            spearman, _ = spearmanr(all_labels, all_preds)
+        if len(np.unique(all_labels)) > 1 and len(np.unique(all_probs)) > 1:
+            pearson, _ = pearsonr(all_labels, all_probs)
+            spearman, _ = spearmanr(all_labels, all_probs)
+            try:
+                auc = roc_auc_score(all_labels, all_probs)
+                aupr = average_precision_score(all_labels, all_probs)
+            except ValueError:
+                auc, aupr = 0.0, 0.0
         else:
-            pearson = 0.0
-            spearman = 0.0
+            pearson, spearman, auc, aupr = 0.0, 0.0, 0.0, 0.0
 
         metrics = {
             'loss': avg_loss,
             'rmse': rmse,
             'mae': mae,
             'pearson': pearson,
-            'spearman': spearman
+            'spearman': spearman,
+            'auc': auc,
+            'aupr': aupr
         }
 
         return metrics
@@ -366,14 +380,19 @@ class Trainer:
                 self.val_metrics.append(val_metrics)
 
                 # Log metrics
+                logger.info("=" * 120)
                 logger.info(
-                    f"Epoch {epoch + 1}/{self.config.training.num_epochs} - "
-                    f"Train Loss: {train_loss:.4f}, "
-                    f"Val Loss: {val_metrics['loss']:.4f}, "
-                    f"RMSE: {val_metrics['rmse']:.4f}, "
-                    f"MAE: {val_metrics['mae']:.4f}, "
-                    f"Pearson: {val_metrics['pearson']:.4f}"
+                    f"[Epoch {epoch + 1:03d}/{self.config.training.num_epochs}] "
+                    f"Train Loss: {train_loss:.4f} | "
+                    f"Val Loss: {val_metrics['loss']:.4f} | "
+                    f"RMSE: {val_metrics['rmse']:.4f} | "
+                    f"MAE: {val_metrics['mae']:.4f} | "
+                    f"Pearson: {val_metrics['pearson']:.4f} | "
+                    f"Spearman: {val_metrics['spearman']:.4f} | "
+                    f"AUC: {val_metrics.get('auc', 0.0):.4f} | "
+                    f"AUPR: {val_metrics.get('aupr', 0.0):.4f}"
                 )
+                logger.info("=" * 120)
 
                 # TensorBoard logging
                 self.writer.add_scalar('train/loss', train_loss, epoch)
