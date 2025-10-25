@@ -238,6 +238,16 @@ class Trainer:
                 loss = self.criterion(output.squeeze(), label)
                 loss = loss / self.gradient_accumulation_steps
 
+                # ===== Debug block =====
+                if batch_idx % 100 == 0 or loss.item() < 0:
+                    logger.warning(
+                        f"[DEBUG] Epoch {self.current_epoch + 1}, Batch {batch_idx}: "
+                        f"Device={self.device}, Dtype={output.dtype}, "
+                        f"Output Range=({output.min().item():.3f}, {output.max().item():.3f}), "
+                        f"Mean={output.mean().item():.3f}, Loss={loss.item():.6f}"
+                    )
+                # ========================
+
                 # Backward pass
                 loss.backward()
 
