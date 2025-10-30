@@ -73,7 +73,7 @@
         "min_delta": 0.0001,
         "save_checkpoint_every": 50,
         "save_best_only": true,
-        "monitor_metric": "auc",
+        "monitor_metric": "rmse",
         "log_interval": 100,
         "eval_interval": 1,
         "seed": 42
