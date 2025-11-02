@@ -188,15 +188,24 @@ class DrugSideEffectModel(nn.Module):
             se_emb.float(), se_attention_mask.float(), fusion=False
         )  # (batch, s, c)
 
+        # === Optional Cross-Attention ===
         if self.use_cross_attention:
-            combined = torch.cat([drug_encoded, se_encoded], dim=1)
-            combined_mask = torch.cat([drug_attention_mask, se_attention_mask], dim=-1)
+            # Concatenate drug and side effect encodings
+            combined = torch.cat([drug_encoded, se_encoded], dim=1)  # [batch, drug_len+se_len, hidden]
+            
+            # Create combined mask by concatenating the original masks (not attention masks)
+            combined_mask_flat = torch.cat([drug_mask, se_mask], dim=1)  # [batch, drug_len+se_len]
+            combined_attention_mask = self._create_attention_mask(combined_mask_flat)
+            
+            # Apply cross-attention encoder
             combined = self.cross_attention_encoder(
-                combined.float(), combined_mask.float(), fusion=True
+                combined.float(), combined_attention_mask.float(), fusion=True
             )
-            seq_len = drug_encoded.size(1)
-            drug_encoded = combined[:, :seq_len, :]
-            se_encoded = combined[:, seq_len:, :]
+            
+            # Split back to drug and side effect encodings
+            drug_len = drug_encoded.size(1)
+            drug_encoded = combined[:, :drug_len, :]
+            se_encoded = combined[:, drug_len:, :]
 
         # ===================================================================
         # === INTERACTION MODULE (Fixed according to paper) ===
@@ -266,13 +275,19 @@ class DrugSideEffectModel(nn.Module):
         total_params = sum(p.numel() for p in self.parameters())
         trainable_params = sum(p.numel() for p in self.parameters() if p.requires_grad)
 
-        return {
+        result = {
             'total': total_params,
             'trainable': trainable_params,
             'drug_encoder': sum(p.numel() for p in self.encoder_drug.parameters()),
             'se_encoder': sum(p.numel() for p in self.encoder_side.parameters()),
             'decoder': sum(p.numel() for p in self.decoder.parameters())
         }
+        
+        # Add cross-attention params if exists
+        if self.use_cross_attention:
+            result['cross_attention'] = sum(p.numel() for p in self.cross_attention_encoder.parameters())
+        
+        return result
 
 
 def create_model(config: ModelConfig, device: str = 'cpu') -> DrugSideEffectModel:
