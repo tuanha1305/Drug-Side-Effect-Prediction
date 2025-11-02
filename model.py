@@ -188,8 +188,6 @@ class DrugSideEffectModel(nn.Module):
             se_emb.float(), se_attention_mask.float(), fusion=False
         )  # (batch, s, c)
 
-        print("use_cross_attention: ", self.use_cross_attention)
-
         # === Optional Cross-Attention ===
         if self.use_cross_attention:
             # Concatenate drug and side effect encodings

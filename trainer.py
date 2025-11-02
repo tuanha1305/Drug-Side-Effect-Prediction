@@ -372,6 +372,7 @@ class Trainer:
                     f"Val Loss: {val_metrics['loss']:.4f}, "
                     f"RMSE: {val_metrics['rmse']:.4f}, "
                     f"MAE: {val_metrics['mae']:.4f}, "
+                    f"SCC: {val_metrics['spearman']:.4f}, "
                     f"Pearson: {val_metrics['pearson']:.4f}"
                 )
 
