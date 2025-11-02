@@ -114,7 +114,8 @@ class DrugSideEffectDataset(Dataset):
         se_indices = torch.from_numpy(se_indices).long()
         drug_mask = torch.from_numpy(drug_mask).long()
         se_mask_val = torch.from_numpy(se_mask_val).long()
-        label = torch.tensor(int(label), dtype=torch.float32)
+        # Keep label as float for regression (frequency values 0-5)
+        label = torch.tensor(float(label), dtype=torch.float32)
         
         return drug_encoded, se_indices, drug_mask, se_mask_val, label
     

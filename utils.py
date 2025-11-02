@@ -202,7 +202,10 @@ def plot_confusion_matrix(
     """
     Plot confusion matrix for binary analysis
     
-    Note: For regression task, converts continuous predictions to binary
+    ⚠️ NOTE: This is NOT in the paper - additional analysis only!
+    Paper uses: RMSE, MAE, SCC (Spearman), Overlap@N%
+    
+    For regression task, converts continuous predictions to binary
     by thresholding (y_true != 0 for positives, y_pred > threshold)
 
     Args:
@@ -247,7 +250,10 @@ def plot_roc_curve(
     """
     Plot ROC curve for binary analysis
     
-    Note: For regression task, evaluates ranking ability by treating
+    ⚠️ NOTE: This is NOT in the paper - additional analysis only!
+    Paper uses: RMSE, MAE, SCC (Spearman), Overlap@N%
+    
+    For regression task, evaluates ranking ability by treating
     non-zero frequencies as positive class (y_true != 0)
 
     Args:
@@ -296,7 +302,10 @@ def plot_pr_curve(
     """
     Plot Precision-Recall curve for binary analysis
     
-    Note: For regression task, evaluates ranking ability by treating
+    ⚠️ NOTE: This is NOT in the paper - additional analysis only!
+    Paper uses: RMSE, MAE, SCC (Spearman), Overlap@N%
+    
+    For regression task, evaluates ranking ability by treating
     non-zero frequencies as positive class (y_true != 0)
 
     Args:
@@ -512,13 +521,15 @@ def analyze_predictions(
         output_dir: str = 'analysis'
 ):
     """
-    Comprehensive analysis of predictions (Regression + Binary analysis)
+    Comprehensive analysis of predictions (Regression + Additional analysis)
     
     Creates multiple plots:
-    - Predictions vs Actual (regression scatter plot)
-    - Confusion Matrix (binary analysis: 0 vs non-zero)
-    - ROC Curve (ranking ability)
-    - PR Curve (ranking ability)
+    - Predictions vs Actual (regression scatter plot) ✅ Main analysis
+    - Confusion Matrix (binary analysis: 0 vs non-zero) ⚠️ NOT in paper
+    - ROC Curve (ranking ability) ⚠️ NOT in paper  
+    - PR Curve (ranking ability) ⚠️ NOT in paper
+    
+    Paper metrics: RMSE, MAE, SCC (Spearman), Overlap@N%
 
     Args:
         y_true: True frequency values (0-5)

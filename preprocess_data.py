@@ -171,8 +171,10 @@ def create_cv_splits(
     logger.info("Creating Cross-Validation Splits")
     logger.info("="*60)
 
-    X = df[['SE_id']].values  # Only SE_id, không có Drug_id
-    y = (df['Label'] != 0).astype(int).values  # Binary labels for stratification
+    X = df[['SE_id']].values  # Only SE_id
+    # For regression task with frequency labels (0-5), stratify by frequency bins
+    # to maintain distribution across folds
+    y = df['Label'].values.astype(int)  # Use actual frequency labels for stratification
 
     skf = StratifiedKFold(
         n_splits=config.data.n_folds,

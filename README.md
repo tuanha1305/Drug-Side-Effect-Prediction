@@ -90,10 +90,18 @@ python evaluate.py --checkpoint checkpoints/best_model.pth
 - **Interaction**: Outer product + CNN
 - **Decoder**: Deep MLP với batch normalization
 
-## Metrics
+## Metrics (from Paper)
 
-- **Binary Classification**: AUC-ROC, AUPR, Precision, Recall, Accuracy
-- **Regression**: RMSE, MAE, Pearson, Spearman correlation
+**Primary Metrics (Regression Task):**
+- **RMSE** - Root Mean Squared Error (frequency prediction)
+- **MAE** - Mean Absolute Error (frequency prediction)
+- **SCC** - Spearman's rank correlation coefficient (association prediction)
+- **Overlap@N%** - Recommendation metrics (1%, 5%, 10%, 20% for ranking evaluation)
+
+**Additional Metrics (Supplementary):**
+- Pearson correlation
+- Per-drug RMSE/MAE
+- Binary analysis (for optional visualization only, not in paper)
 
 ## Requirements
 
