@@ -18,6 +18,7 @@ import logging
 
 from config import Config
 from model import DrugSideEffectModel
+from losses import MSELoss, RMSELoss, HuberLoss
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -176,7 +177,7 @@ class Trainer:
     def _create_criterion(self) -> nn.Module:
         """Create loss function"""
         # MSE Loss for regression
-        return nn.MSELoss()
+        return RMSELoss()
 
     def train_epoch(self) -> float:
         """
