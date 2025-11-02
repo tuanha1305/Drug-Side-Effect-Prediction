@@ -200,12 +200,15 @@ def plot_confusion_matrix(
         save_path: Optional[str] = None
 ):
     """
-    Plot confusion matrix
+    Plot confusion matrix for binary analysis
+    
+    Note: For regression task, converts continuous predictions to binary
+    by thresholding (y_true != 0 for positives, y_pred > threshold)
 
     Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
-        threshold: Classification threshold
+        y_true: True frequency values (will be converted to binary: 0 vs non-zero)
+        y_pred: Predicted frequency scores (will be thresholded)
+        threshold: Threshold for converting predictions to binary
         title: Plot title
         save_path: Path to save figure (optional)
     """
@@ -242,11 +245,14 @@ def plot_roc_curve(
         save_path: Optional[str] = None
 ):
     """
-    Plot ROC curve
+    Plot ROC curve for binary analysis
+    
+    Note: For regression task, evaluates ranking ability by treating
+    non-zero frequencies as positive class (y_true != 0)
 
     Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
+        y_true: True frequency values (will be converted to binary: 0 vs non-zero)
+        y_pred: Predicted frequency scores (used as ranking scores)
         title: Plot title
         save_path: Path to save figure (optional)
     """
@@ -288,11 +294,14 @@ def plot_pr_curve(
         save_path: Optional[str] = None
 ):
     """
-    Plot Precision-Recall curve
+    Plot Precision-Recall curve for binary analysis
+    
+    Note: For regression task, evaluates ranking ability by treating
+    non-zero frequencies as positive class (y_true != 0)
 
     Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
+        y_true: True frequency values (will be converted to binary: 0 vs non-zero)
+        y_pred: Predicted frequency scores (used as ranking scores)
         title: Plot title
         save_path: Path to save figure (optional)
     """
@@ -503,11 +512,17 @@ def analyze_predictions(
         output_dir: str = 'analysis'
 ):
     """
-    Comprehensive analysis of predictions
+    Comprehensive analysis of predictions (Regression + Binary analysis)
+    
+    Creates multiple plots:
+    - Predictions vs Actual (regression scatter plot)
+    - Confusion Matrix (binary analysis: 0 vs non-zero)
+    - ROC Curve (ranking ability)
+    - PR Curve (ranking ability)
 
     Args:
-        y_true: True labels
-        y_pred: Predictions
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency scores
         output_dir: Output directory for plots
     """
     output_dir = Path(output_dir)

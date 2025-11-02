@@ -19,9 +19,10 @@ class DrugSideEffectModel(nn.Module):
         1. Drug Encoder (Transformer)
         2. Side Effect Encoder (Transformer)
         3. Interaction Module:
-           - Scalar Projection Layer: I = E_d · E_s^T
+           - Outer Product Layer: I = E_d ⊗ E_s (element-wise multiplication)
+           - Reduce to scalar map: sum across embedding dimension
            - CNN Layer: M = CNN(I)
-        4. Decoder (MLP → raw logit output)
+        4. Decoder (MLP → raw score output for regression)
     """
 
     def __init__(self, config: ModelConfig, device: str = 'cpu'):
@@ -116,7 +117,7 @@ class DrugSideEffectModel(nn.Module):
             layers.append(nn.Dropout(dropout))
             prev_dim = hidden_dim
 
-        # Final linear → raw logit output (no activation)
+        # Final linear → raw score output (no activation, for regression)
         layers.append(nn.Linear(prev_dim, output_dim))
         return nn.Sequential(*layers)
 
@@ -143,7 +144,7 @@ class DrugSideEffectModel(nn.Module):
             se_mask: (batch, max_se_len) mask for SE
 
         Returns:
-            score: (batch, 1) predicted frequency score (raw logits)
+            score: (batch, 1) predicted frequency score (raw, continuous value for regression)
             drug_encoded: (batch, max_drug_len, embedding_dim)
             se_encoded: (batch, max_se_len, embedding_dim)
         """
@@ -177,16 +178,24 @@ class DrugSideEffectModel(nn.Module):
         # === INTERACTION MODULE (Fixed according to paper) ===
         # ===================================================================
 
-        # 3.4.1. Scalar Projection Layer
-        # Paper equation (12): I = E_d · E_s
-        # This is a batch matrix multiplication: (batch, d, c) @ (batch, c, s) = (batch, d, s)
-        interaction_map = torch.bmm(
-            drug_encoded,
-            se_encoded.transpose(1, 2)
-        )  # (batch, d, s)
+        # 3.4.1. Outer Product Layer
+        # Paper: Create interaction matrix using outer product
+        # Expand dimensions for broadcasting:
+        # drug_encoded: (batch, d, c) -> (batch, d, 1, c)
+        # se_encoded: (batch, s, c) -> (batch, 1, s, c)
+        drug_aug = drug_encoded.unsqueeze(2)  # (batch, d, 1, c)
+        se_aug = se_encoded.unsqueeze(1)  # (batch, 1, s, c)
 
-        # Add channel dimension for CNN: (batch, 1, d, s)
-        interaction_map = interaction_map.unsqueeze(1)
+        # Outer product via element-wise multiplication
+        # (batch, d, 1, c) * (batch, 1, s, c) = (batch, d, s, c)
+        interaction = drug_aug * se_aug  # (batch, d, s, c)
+
+        # Permute to (batch, c, d, s) for channel-wise operations
+        interaction = interaction.permute(0, 3, 1, 2)  # (batch, c, d, s)
+
+        # Sum across channel dimension to get scalar interaction map
+        # (batch, c, d, s) -> (batch, 1, d, s)
+        interaction_map = torch.sum(interaction, dim=1, keepdim=True)  # (batch, 1, d, s)
 
         # Apply dropout
         interaction_map = F.dropout(
@@ -196,8 +205,7 @@ class DrugSideEffectModel(nn.Module):
         )
 
         # 3.4.2. CNN Layer
-        # Paper equation (13): M = CNN(I)
-        # Captures local region interactions between neighboring substructures
+        # Paper: Apply convolutional layer to capture local region interactions
         interaction_features = self.interaction_cnn(interaction_map)  # (batch, out_channels, d', s')
 
         # ===================================================================
@@ -207,11 +215,11 @@ class DrugSideEffectModel(nn.Module):
         # Flatten: M → vector
         interaction_flat = interaction_features.view(batch_size, -1)
 
-        # MLP prediction
+        # MLP prediction (Regression task)
         # Paper equations (14-15):
         # O_1 = ReLU(W_1 * Flatten(M) + b_1)
         # Score = W_4 * ReLU(W_3 * ReLU(W_2 * O_1 + b_2) + b_3) + b_4
-        score = self.decoder(interaction_flat)  # (batch, 1) raw logits
+        score = self.decoder(interaction_flat)  # (batch, 1) raw score for regression
 
         return score, drug_encoded, se_encoded
 
