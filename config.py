@@ -88,6 +88,7 @@ class ModelConfig:
 @dataclass
 class TrainingConfig:
     """Training configuration"""
+    loss_function: str = "mse"
     # Optimization (Paper: Adam with lr=1e-4)
     learning_rate: float = 1e-4
     weight_decay: float = 0.01

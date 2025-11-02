@@ -379,6 +379,54 @@ def matthews_corrcoef(y_true: np.ndarray, y_pred: np.ndarray, threshold: float =
     return float(mcc_sklearn(y_true_binary, y_pred_binary))
 
 
+def overlap_at_n(y_true: np.ndarray, y_pred: np.ndarray, n_percent: float) -> float:
+    """
+    Overlap@N% metric from the paper
+
+    Measures the proportion of positive samples in the top N% of predicted results.
+    This is a recommendation metric that evaluates how well the model ranks
+    high-frequency side effects at the top.
+
+    Formula: Overlap@N% = TP / (T × N%)
+    where:
+        TP = number of positive samples in top N% of predicted results
+        T = total number of samples in test set
+
+    Args:
+        y_true: True labels (0 for no side effect, >0 for side effect with frequency)
+        y_pred: Predicted probabilities or scores
+        n_percent: Percentage (0-100) for top-N ranking (e.g., 1, 5, 10, 20)
+
+    Returns:
+        overlap: Overlap@N% score
+    """
+    if n_percent <= 0 or n_percent > 100:
+        raise ValueError("n_percent must be in range (0, 100]")
+
+    # Convert to binary labels (0 = negative, 1 = positive)
+    y_true_binary = (y_true != 0).astype(int)
+
+    # Total number of samples
+    total_samples = len(y_true)
+
+    # Number of samples in top N%
+    n_top = max(1, int(np.ceil(total_samples * n_percent / 100.0)))
+
+    # Get indices of top N% predictions (sorted by predicted score, descending)
+    top_indices = np.argsort(y_pred)[::-1][:n_top]
+
+    # Count true positives in top N%
+    tp_in_top_n = np.sum(y_true_binary[top_indices])
+
+    # Calculate Overlap@N%
+    # Denominator is T × N% according to paper equation (20)
+    denominator = total_samples * (n_percent / 100.0)
+
+    overlap = tp_in_top_n / denominator if denominator > 0 else 0.0
+
+    return float(overlap)
+
+
 # ============================================================================
 # Per-Drug Metrics
 # ============================================================================
@@ -516,7 +564,8 @@ def calculate_all_regression_metrics(
 def calculate_all_classification_metrics(
         y_true: np.ndarray,
         y_pred: np.ndarray,
-        threshold: float = 0.5
+        threshold: float = 0.5,
+        include_overlap: bool = True
 ) -> Dict[str, float]:
     """
     Calculate all classification metrics
@@ -525,6 +574,7 @@ def calculate_all_classification_metrics(
         y_true: True labels
         y_pred: Predicted probabilities
         threshold: Classification threshold
+        include_overlap: Whether to include Overlap@N% metrics
 
     Returns:
         metrics: Dictionary of all classification metrics
@@ -544,6 +594,14 @@ def calculate_all_classification_metrics(
         'mcc': matthews_corrcoef(y_true, y_pred, threshold),
         **cm
     }
+
+    # Add Overlap@N% metrics (recommendation metrics from paper)
+    if include_overlap:
+        for n in [1, 5, 10, 20]:
+            try:
+                metrics[f'overlap@{n}%'] = overlap_at_n(y_true, y_pred, n)
+            except:
+                metrics[f'overlap@{n}%'] = 0.0
 
     return metrics
 
@@ -602,6 +660,7 @@ def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
     regression_keys = ['mse', 'rmse', 'mae', 'r2', 'pearson', 'spearman', 'mape']
     classification_keys = ['accuracy', 'precision', 'recall', 'f1', 'specificity',
                            'balanced_accuracy', 'auc_roc', 'auc_pr', 'mcc']
+    overlap_keys = ['overlap@1%', 'overlap@5%', 'overlap@10%', 'overlap@20%']
     cm_keys = ['TP', 'TN', 'FP', 'FN']
     drug_keys = ['drug_auc', 'drug_aupr']
 
@@ -616,6 +675,13 @@ def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
     for key in classification_keys:
         if key in metrics:
             print(f"  {key:20s}: {metrics[key]:.4f}")
+
+    # Print Overlap@N% metrics (recommendation metrics)
+    if any(k in metrics for k in overlap_keys):
+        print("\nRecommendation Metrics (Overlap@N%):")
+        for key in overlap_keys:
+            if key in metrics:
+                print(f"  {key:20s}: {metrics[key]:.4f}")
 
     # Print confusion matrix
     if all(k in metrics for k in cm_keys):
@@ -666,6 +732,32 @@ if __name__ == "__main__":
     print(f"Drug AUC: {drug_auc:.4f} (n={len(drug_aucs)} drugs)")
     print(f"Drug AUPR: {drug_aupr:.4f} (n={len(drug_auprs)} drugs)")
 
+    # Test Overlap@N% metrics specifically
     print("\n" + "=" * 60)
-    print("✓ All metrics tests passed!")
+    print("Testing Overlap@N% Metrics")
+    print("=" * 60)
+
+    # Create test data with clear positive/negative labels
+    y_true_test = np.array([0, 0, 0, 5, 4, 3, 2, 1, 0, 0])  # 5 positives, 5 negatives
+    y_pred_test = np.array([0.1, 0.2, 0.3, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.15])
+
+    print(f"\nTest data:")
+    print(f"y_true: {y_true_test}")
+    print(f"y_pred: {y_pred_test}")
+    print(f"Number of positive samples: {np.sum(y_true_test != 0)}")
+
+    for n in [10, 20, 50, 100]:
+        overlap = overlap_at_n(y_true_test, y_pred_test, n)
+        print(f"\nOverlap@{n}%: {overlap:.4f}")
+
+        # Show which samples are in top N%
+        n_top = max(1, int(np.ceil(len(y_true_test) * n / 100.0)))
+        top_indices = np.argsort(y_pred_test)[::-1][:n_top]
+        print(f"  Top {n}% indices: {top_indices}")
+        print(f"  Top {n}% true labels: {y_true_test[top_indices]}")
+        print(f"  Top {n}% pred scores: {y_pred_test[top_indices]}")
+        print(f"  Positives in top {n}%: {np.sum(y_true_test[top_indices] != 0)}/{n_top}")
+
+    print("\n" + "=" * 60)
+    print("All metrics tests passed!")
     print("=" * 60)
