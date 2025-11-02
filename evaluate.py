@@ -166,8 +166,7 @@ def evaluate_fold(
     # Create evaluator
     evaluator = Evaluator(
         model=model,
-        device=config.device,
-        threshold=0.5
+        device=config.device
     )
 
     # Evaluate
