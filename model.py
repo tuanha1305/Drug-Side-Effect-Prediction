@@ -75,6 +75,20 @@ class DrugSideEffectModel(nn.Module):
             use_gradient_checkpointing=config.use_gradient_checkpointing
         )
 
+        # === Optional Cross-Attention ===
+        self.use_cross_attention = config.use_cross_attention
+        if self.use_cross_attention:
+            self.cross_attention_encoder = Encoder_MultipleLayers(
+                n_layer=1,
+                hidden_size=config.embedding_dim,
+                intermediate_size=config.intermediate_size,
+                num_attention_heads=config.num_attention_heads,
+                attention_probs_dropout_prob=config.attention_dropout,
+                hidden_dropout_prob=config.hidden_dropout,
+                use_flash_attention=config.use_flash_attention,
+                use_sdpa=config.use_sdpa
+            )
+
         # === Interaction Module ===
         # Scalar projection layer is implemented in forward()
         # CNN layer to capture local region interactions
@@ -173,6 +187,16 @@ class DrugSideEffectModel(nn.Module):
         se_encoded = self.encoder_side(
             se_emb.float(), se_attention_mask.float(), fusion=False
         )  # (batch, s, c)
+
+        if self.use_cross_attention:
+            combined = torch.cat([drug_encoded, se_encoded], dim=1)
+            combined_mask = torch.cat([drug_attention_mask, se_attention_mask], dim=-1)
+            combined = self.cross_attention_encoder(
+                combined.float(), combined_mask.float(), fusion=True
+            )
+            seq_len = drug_encoded.size(1)
+            drug_encoded = combined[:, :seq_len, :]
+            se_encoded = combined[:, seq_len:, :]
 
         # ===================================================================
         # === INTERACTION MODULE (Fixed according to paper) ===

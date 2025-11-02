@@ -73,6 +73,7 @@ class ModelConfig:
 
     # Interaction Module (Paper: Scalar Projection + CNN)
     # Note: conv_in_channels is always 1 (interaction map has 1 channel)
+    use_cross_attention: bool = True
     conv_out_channels: int = 10  # Paper mentions 10 convolutional kernels
     conv_kernel_size: int = 3  # Paper mentions kernel size 3
     conv_padding: int = 0  # Paper doesn't mention padding, default is 0
