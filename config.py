@@ -53,7 +53,7 @@ class ModelConfig:
     max_se_len: int = 50
 
     # Embedding (Paper: 300-dimensional embeddings)
-    embedding_dim: int = 300  # Changed from 200 to 300 according to paper
+    embedding_dim: int = 304  # Must be divisible by num_attention_heads (8): 304 = 8 * 38
     max_position_embeddings: int = 500
     dropout_rate: float = 0.1
 
@@ -65,8 +65,8 @@ class ModelConfig:
     hidden_dropout: float = 0.1
 
     # Decoder MLP (Paper: 3 hidden layers)
-    decoder_hidden_dims: List[int] = field(default_factory=lambda: [512, 300])
-    decoder_input_dim: int = 7350  # Will be calculated: conv_out_channels * d' * s'
+    decoder_hidden_dims: List[int] = field(default_factory=lambda: [512, 304])
+    decoder_input_dim: int = 23040  # conv_out_channels * d' * s' = 10 * 48 * 48 = 23040
     decoder_output_dim: int = 1  # Single frequency score
     decoder_dropout: float = 0.1
     use_batch_norm: bool = False  # Paper doesn't mention batch norm in decoder

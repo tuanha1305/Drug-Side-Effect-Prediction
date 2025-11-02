@@ -20,7 +20,7 @@
         "addition_negative_strategy": "all"
     },
     "model": {
-        "embedding_dim": 200,
+        "embedding_dim": 304,
         "max_position_embeddings": 500,
         "dropout_rate": 0.1,
         "num_encoder_layers": 8,
@@ -30,16 +30,15 @@
         "hidden_dropout": 0.1,
         "decoder_hidden_dims": [
             512,
-            64,
-            32
+            304
         ],
-        "decoder_input_dim": 6912,
+        "decoder_input_dim": 23040,
         "decoder_output_dim": 1,
         "decoder_dropout": 0.3,
         "use_batch_norm": true,
         "use_cross_attention": false,
         "conv_in_channels": 1,
-        "conv_out_channels": 3,
+        "conv_out_channels": 10,
         "conv_kernel_size": 3,
         "conv_padding": 0,
         "use_flash_attention": true,
