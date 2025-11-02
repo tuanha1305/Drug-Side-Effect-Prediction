@@ -561,51 +561,6 @@ def calculate_all_regression_metrics(
     return metrics
 
 
-def calculate_all_classification_metrics(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5,
-        include_overlap: bool = True
-) -> Dict[str, float]:
-    """
-    Calculate all classification metrics
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
-        threshold: Classification threshold
-        include_overlap: Whether to include Overlap@N% metrics
-
-    Returns:
-        metrics: Dictionary of all classification metrics
-    """
-    # Confusion matrix
-    cm = get_confusion_matrix(y_true, y_pred, threshold)
-
-    metrics = {
-        'accuracy': accuracy(y_true, y_pred, threshold),
-        'precision': precision(y_true, y_pred, threshold),
-        'recall': recall(y_true, y_pred, threshold),
-        'f1': f1(y_true, y_pred, threshold),
-        'specificity': specificity(y_true, y_pred, threshold),
-        'balanced_accuracy': balanced_accuracy(y_true, y_pred, threshold),
-        'auc_roc': auc_roc(y_true, y_pred),
-        'auc_pr': auc_pr(y_true, y_pred),
-        'mcc': matthews_corrcoef(y_true, y_pred, threshold),
-        **cm
-    }
-
-    # Add Overlap@N% metrics (recommendation metrics from paper)
-    if include_overlap:
-        for n in [1, 5, 10, 20]:
-            try:
-                metrics[f'overlap@{n}%'] = overlap_at_n(y_true, y_pred, n)
-            except:
-                metrics[f'overlap@{n}%'] = 0.0
-
-    return metrics
-
-
 def calculate_all_metrics(
         y_true: np.ndarray,
         y_pred: np.ndarray,
@@ -627,11 +582,8 @@ def calculate_all_metrics(
     # Regression metrics
     reg_metrics = calculate_all_regression_metrics(y_true, y_pred)
 
-    # Classification metrics
-    cls_metrics = calculate_all_classification_metrics(y_true, y_pred, threshold)
-
     # Combine
-    all_metrics = {**reg_metrics, **cls_metrics}
+    all_metrics = {**reg_metrics}
 
     # Per-drug metrics
     if drug_ids is not None:
@@ -658,8 +610,6 @@ def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
 
     # Group metrics
     regression_keys = ['mse', 'rmse', 'mae', 'r2', 'pearson', 'spearman', 'mape']
-    classification_keys = ['accuracy', 'precision', 'recall', 'f1', 'specificity',
-                           'balanced_accuracy', 'auc_roc', 'auc_pr', 'mcc']
     overlap_keys = ['overlap@1%', 'overlap@5%', 'overlap@10%', 'overlap@20%']
     cm_keys = ['TP', 'TN', 'FP', 'FN']
     drug_keys = ['drug_auc', 'drug_aupr']
@@ -667,12 +617,6 @@ def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
     # Print regression metrics
     print("\nRegression Metrics:")
     for key in regression_keys:
-        if key in metrics:
-            print(f"  {key:20s}: {metrics[key]:.4f}")
-
-    # Print classification metrics
-    print("\nClassification Metrics:")
-    for key in classification_keys:
         if key in metrics:
             print(f"  {key:20s}: {metrics[key]:.4f}")
 
