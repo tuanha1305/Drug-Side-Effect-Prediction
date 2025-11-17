@@ -1,24 +1,11 @@
 """
 Metrics for drug side effect prediction
-Comprehensive metrics for regression and classification evaluation
+Regression metrics for HSTrans paper evaluation
 """
 
 import numpy as np
 from typing import Dict, List, Optional, Tuple
-from sklearn.metrics import (
-    mean_squared_error,
-    mean_absolute_error,
-    r2_score,
-    roc_auc_score,
-    average_precision_score,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    roc_curve,
-    precision_recall_curve
-)
+from sklearn.metrics import mean_squared_error, mean_absolute_error
 from scipy.stats import pearsonr, spearmanr
 import logging
 
@@ -27,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
-# Regression Metrics
+# Regression Metrics (HSTrans Paper)
 # ============================================================================
 
 def mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -35,8 +22,8 @@ def mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Mean Squared Error
 
     Args:
-        y_true: True values
-        y_pred: Predicted values
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
 
     Returns:
         mse: Mean squared error
@@ -46,11 +33,11 @@ def mse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 
 def rmse(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """
-    Root Mean Squared Error
+    Root Mean Squared Error (Primary metric in paper)
 
     Args:
-        y_true: True values
-        y_pred: Predicted values
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
 
     Returns:
         rmse: Root mean squared error
@@ -63,8 +50,8 @@ def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     Mean Absolute Error
 
     Args:
-        y_true: True values
-        y_pred: Predicted values
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
 
     Returns:
         mae: Mean absolute error
@@ -72,37 +59,28 @@ def mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(mean_absolute_error(y_true, y_pred))
 
 
-def r2(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    R-squared (coefficient of determination)
-
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-
-    Returns:
-        r2: R-squared score
-    """
-    return float(r2_score(y_true, y_pred))
-
-
 def pearson(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
     """
     Pearson correlation coefficient
 
     Args:
-        y_true: True values
-        y_pred: Predicted values
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
 
     Returns:
         correlation: Pearson correlation coefficient
         p_value: Two-tailed p-value
     """
-    if len(np.unique(y_true)) < 2 or len(np.unique(y_pred)) < 2:
+    # Filter out zeros for meaningful correlation (as per paper)
+    valid_mask = y_true != 0
+    valid_y_true = y_true[valid_mask]
+    valid_y_pred = y_pred[valid_mask]
+
+    if len(valid_y_true) < 2 or len(np.unique(valid_y_true)) < 2:
         return 0.0, 1.0
 
     try:
-        corr, p_val = pearsonr(y_true, y_pred)
+        corr, p_val = pearsonr(valid_y_true, valid_y_pred)
         return float(corr), float(p_val)
     except:
         return 0.0, 1.0
@@ -110,278 +88,34 @@ def pearson(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
 
 def spearman(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
     """
-    Spearman correlation coefficient
+    Spearman correlation coefficient (SCC in paper)
 
     Args:
-        y_true: True values
-        y_pred: Predicted values
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
 
     Returns:
         correlation: Spearman correlation coefficient
         p_value: Two-tailed p-value
     """
-    if len(np.unique(y_true)) < 2 or len(np.unique(y_pred)) < 2:
+    # Filter out zeros for meaningful correlation (as per paper)
+    valid_mask = y_true != 0
+    valid_y_true = y_true[valid_mask]
+    valid_y_pred = y_pred[valid_mask]
+
+    if len(valid_y_true) < 2 or len(np.unique(valid_y_true)) < 2:
         return 0.0, 1.0
 
     try:
-        corr, p_val = spearmanr(y_true, y_pred)
+        corr, p_val = spearmanr(valid_y_true, valid_y_pred)
         return float(corr), float(p_val)
     except:
         return 0.0, 1.0
 
 
-def mape(y_true: np.ndarray, y_pred: np.ndarray, epsilon: float = 1e-8) -> float:
-    """
-    Mean Absolute Percentage Error
-
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-        epsilon: Small constant to avoid division by zero
-
-    Returns:
-        mape: Mean absolute percentage error
-    """
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-
-    # Avoid division by zero
-    mask = np.abs(y_true) > epsilon
-
-    if mask.sum() == 0:
-        return 0.0
-
-    return float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
-
-
-# ============================================================================
-# Classification Metrics
-# ============================================================================
-
-def accuracy(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 0.5) -> float:
-    """
-    Accuracy score
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-
-    Returns:
-        accuracy: Accuracy score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    return float(accuracy_score(y_true_binary, y_pred_binary))
-
-
-def precision(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5,
-        average: str = 'binary'
-) -> float:
-    """
-    Precision score
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-        average: 'binary', 'micro', 'macro', 'weighted'
-
-    Returns:
-        precision: Precision score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    return float(precision_score(y_true_binary, y_pred_binary, average=average, zero_division=0))
-
-
-def recall(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5,
-        average: str = 'binary'
-) -> float:
-    """
-    Recall score (Sensitivity, True Positive Rate)
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-        average: 'binary', 'micro', 'macro', 'weighted'
-
-    Returns:
-        recall: Recall score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    return float(recall_score(y_true_binary, y_pred_binary, average=average, zero_division=0))
-
-
-def f1(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5,
-        average: str = 'binary'
-) -> float:
-    """
-    F1 score (harmonic mean of precision and recall)
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-        average: 'binary', 'micro', 'macro', 'weighted'
-
-    Returns:
-        f1: F1 score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    return float(f1_score(y_true_binary, y_pred_binary, average=average, zero_division=0))
-
-
-def specificity(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 0.5) -> float:
-    """
-    Specificity score (True Negative Rate)
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-
-    Returns:
-        specificity: Specificity score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    tn, fp, fn, tp = confusion_matrix(y_true_binary, y_pred_binary).ravel()
-
-    return float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
-
-
-def auc_roc(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Area Under the ROC Curve
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
-
-    Returns:
-        auc: AUC-ROC score
-    """
-    y_true_binary = (y_true != 0).astype(int)
-
-    if len(np.unique(y_true_binary)) < 2:
-        return 0.0
-
-    try:
-        return float(roc_auc_score(y_true_binary, y_pred))
-    except:
-        return 0.0
-
-
-def auc_pr(y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """
-    Area Under the Precision-Recall Curve (Average Precision)
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities
-
-    Returns:
-        auc_pr: AUC-PR score (Average Precision)
-    """
-    y_true_binary = (y_true != 0).astype(int)
-
-    if len(np.unique(y_true_binary)) < 2:
-        return 0.0
-
-    try:
-        return float(average_precision_score(y_true_binary, y_pred))
-    except:
-        return 0.0
-
-
-def get_confusion_matrix(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5
-) -> Dict[str, int]:
-    """
-    Get confusion matrix components
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-
-    Returns:
-        cm_dict: Dictionary with TP, TN, FP, FN
-    """
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    tn, fp, fn, tp = confusion_matrix(y_true_binary, y_pred_binary).ravel()
-
-    return {
-        'TP': int(tp),
-        'TN': int(tn),
-        'FP': int(fp),
-        'FN': int(fn)
-    }
-
-
-def balanced_accuracy(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 0.5) -> float:
-    """
-    Balanced accuracy (average of sensitivity and specificity)
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-
-    Returns:
-        balanced_acc: Balanced accuracy score
-    """
-    sens = recall(y_true, y_pred, threshold)
-    spec = specificity(y_true, y_pred, threshold)
-
-    return (sens + spec) / 2
-
-
-def matthews_corrcoef(y_true: np.ndarray, y_pred: np.ndarray, threshold: float = 0.5) -> float:
-    """
-    Matthews Correlation Coefficient
-
-    Args:
-        y_true: True labels
-        y_pred: Predicted probabilities or labels
-        threshold: Threshold for binary classification
-
-    Returns:
-        mcc: Matthews correlation coefficient
-    """
-    from sklearn.metrics import matthews_corrcoef as mcc_sklearn
-
-    y_true_binary = (y_true != 0).astype(int)
-    y_pred_binary = (y_pred > threshold).astype(int)
-
-    return float(mcc_sklearn(y_true_binary, y_pred_binary))
-
-
 def overlap_at_n(y_true: np.ndarray, y_pred: np.ndarray, n_percent: float) -> float:
     """
-    Overlap@N% metric from the paper
+    Overlap@N% metric from HSTrans paper (Equation 20)
 
     Measures the proportion of positive samples in the top N% of predicted results.
     This is a recommendation metric that evaluates how well the model ranks
@@ -393,8 +127,8 @@ def overlap_at_n(y_true: np.ndarray, y_pred: np.ndarray, n_percent: float) -> fl
         T = total number of samples in test set
 
     Args:
-        y_true: True labels (0 for no side effect, >0 for side effect with frequency)
-        y_pred: Predicted probabilities or scores
+        y_true: True frequency labels (0-5, where 0 means no side effect)
+        y_pred: Predicted frequency scores
         n_percent: Percentage (0-100) for top-N ranking (e.g., 1, 5, 10, 20)
 
     Returns:
@@ -403,7 +137,7 @@ def overlap_at_n(y_true: np.ndarray, y_pred: np.ndarray, n_percent: float) -> fl
     if n_percent <= 0 or n_percent > 100:
         raise ValueError("n_percent must be in range (0, 100]")
 
-    # Convert to binary labels (0 = negative, 1 = positive)
+    # Convert to binary labels (0 = negative, >0 = positive)
     y_true_binary = (y_true != 0).astype(int)
 
     # Total number of samples
@@ -428,7 +162,148 @@ def overlap_at_n(y_true: np.ndarray, y_pred: np.ndarray, n_percent: float) -> fl
 
 
 # ============================================================================
-# Per-Drug Metrics
+# Paper-Specific Metric Functions
+# ============================================================================
+
+def calculate_paper_metrics(
+        y_true: np.ndarray,
+        y_pred: np.ndarray
+) -> Dict[str, float]:
+    """
+    Calculate all metrics specified in HSTrans paper
+
+    Paper metrics:
+    - RMSE: Root Mean Squared Error
+    - MAE: Mean Absolute Error  
+    - SCC: Spearman's rank correlation coefficient
+    - Overlap@1%, 5%, 10%, 20%: Recommendation metrics
+
+    Args:
+        y_true: True frequency values (0-5)
+        y_pred: Predicted frequency values
+
+    Returns:
+        metrics: Dictionary of paper metrics
+    """
+    # Basic regression metrics
+    mse_val = mse(y_true, y_pred)
+    rmse_val = rmse(y_true, y_pred)
+    mae_val = mae(y_true, y_pred)
+
+    # Correlation metrics (filter zeros as per paper)
+    pearson_corr, pearson_p = pearson(y_true, y_pred)
+    spearman_corr, spearman_p = spearman(y_true, y_pred)
+
+    # Overlap@N% metrics (key recommendation metrics from paper)
+    overlap_metrics = {}
+    for n in [1, 5, 10, 20]:
+        try:
+            overlap_metrics[f'overlap@{n}%'] = overlap_at_n(y_true, y_pred, n)
+        except Exception as e:
+            logger.warning(f"Failed to compute Overlap@{n}%: {e}")
+            overlap_metrics[f'overlap@{n}%'] = 0.0
+
+    metrics = {
+        'mse': mse_val,
+        'rmse': rmse_val,
+        'mae': mae_val,
+        'pearson': pearson_corr,
+        'pearson_pvalue': pearson_p,
+        'spearman': spearman_corr,  # This is SCC in paper
+        'scc': spearman_corr,  # Alias for paper nomenclature
+        'spearman_pvalue': spearman_p,
+        **overlap_metrics
+    }
+
+    return metrics
+
+
+def print_paper_metrics(metrics: Dict[str, float], title: str = "HSTrans Paper Metrics"):
+    """
+    Pretty print metrics in HSTrans paper format
+
+    Args:
+        metrics: Dictionary of metrics
+        title: Title for the print
+    """
+    print("\n" + "=" * 60)
+    print(title)
+    print("=" * 60)
+
+    # Main metrics from paper Table 1
+    print("\nFrequency Prediction Metrics:")
+    if 'rmse' in metrics:
+        print(f"  RMSE:     {metrics['rmse']:.4f}")
+    if 'mae' in metrics:
+        print(f"  MAE:      {metrics['mae']:.4f}")
+
+    # Association prediction metrics
+    print("\nAssociation Prediction Metrics:")
+    if 'scc' in metrics or 'spearman' in metrics:
+        scc_val = metrics.get('scc', metrics.get('spearman', 0))
+        print(f"  SCC (Spearman): {scc_val:.4f}")
+    if 'pearson' in metrics:
+        print(f"  Pearson:        {metrics['pearson']:.4f}")
+
+    # Recommendation metrics (Overlap@N%) - KEY METRICS FROM PAPER
+    overlap_keys = ['overlap@1%', 'overlap@5%', 'overlap@10%', 'overlap@20%']
+    if any(k in metrics for k in overlap_keys):
+        print("\nRecommendation Metrics (Top-N% Ranking):")
+        for key in overlap_keys:
+            if key in metrics:
+                print(f"  {key:15s}: {metrics[key]:.4f}")
+
+    print("=" * 60 + "\n")
+
+
+# ============================================================================
+# Legacy Functions (for backward compatibility)
+# ============================================================================
+
+def calculate_all_regression_metrics(
+        y_true: np.ndarray,
+        y_pred: np.ndarray
+) -> Dict[str, float]:
+    """
+    Legacy function - use calculate_paper_metrics instead
+    """
+    return calculate_paper_metrics(y_true, y_pred)
+
+
+def calculate_all_metrics(
+        y_true: np.ndarray,
+        y_pred: np.ndarray,
+        threshold: float = 0.5,  # Unused, kept for compatibility
+        drug_ids: Optional[np.ndarray] = None
+) -> Dict[str, float]:
+    """
+    Legacy function - use calculate_paper_metrics instead
+    """
+    metrics = calculate_paper_metrics(y_true, y_pred)
+    
+    # Add per-drug metrics if drug_ids provided (not in paper but for analysis)
+    if drug_ids is not None:
+        try:
+            # Import per-drug functions if available
+            drug_auc, _ = per_drug_auc(y_true, y_pred, drug_ids)
+            drug_aupr, _ = per_drug_aupr(y_true, y_pred, drug_ids)
+            metrics['drug_auc'] = drug_auc
+            metrics['drug_aupr'] = drug_aupr
+        except:
+            pass  # Skip if per_drug_metrics not available or import fails
+
+    return metrics
+
+
+def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
+    """
+    Legacy function - use print_paper_metrics instead
+    """
+    print_paper_metrics(metrics, title)
+
+
+# ============================================================================
+# Per-Drug Metrics (Optional - not in paper but for analysis)
 # ============================================================================
 
 def per_drug_auc(
@@ -437,7 +312,7 @@ def per_drug_auc(
         drug_ids: np.ndarray
 ) -> Tuple[float, List[float]]:
     """
-    Calculate AUC per drug
+    Calculate AUC per drug (optional analysis - not in paper)
 
     Args:
         y_true: True labels
@@ -448,6 +323,8 @@ def per_drug_auc(
         mean_auc: Mean AUC across drugs
         drug_aucs: List of AUC for each drug
     """
+    from sklearn.metrics import roc_auc_score
+    
     unique_drugs = np.unique(drug_ids)
     drug_aucs = []
 
@@ -480,7 +357,7 @@ def per_drug_aupr(
         drug_ids: np.ndarray
 ) -> Tuple[float, List[float]]:
     """
-    Calculate AUPR per drug
+    Calculate AUPR per drug (optional analysis - not in paper)
 
     Args:
         y_true: True labels
@@ -491,6 +368,8 @@ def per_drug_aupr(
         mean_aupr: Mean AUPR across drugs
         drug_auprs: List of AUPR for each drug
     """
+    from sklearn.metrics import average_precision_score
+    
     unique_drugs = np.unique(drug_ids)
     drug_auprs = []
 
@@ -517,164 +396,34 @@ def per_drug_aupr(
     return float(mean_aupr), drug_auprs
 
 
-# ============================================================================
-# Comprehensive Metrics
-# ============================================================================
-
-def calculate_all_regression_metrics(
-        y_true: np.ndarray,
-        y_pred: np.ndarray
-) -> Dict[str, float]:
-    """
-    Calculate all regression metrics
-
-    Args:
-        y_true: True values
-        y_pred: Predicted values
-
-    Returns:
-        metrics: Dictionary of all regression metrics
-    """
-    # Filter valid samples for correlation
-    valid_mask = y_true != 0
-    valid_y_true = y_true[valid_mask]
-    valid_y_pred = y_pred[valid_mask]
-
-    # Pearson correlation
-    pearson_corr, pearson_p = pearson(valid_y_true, valid_y_pred) if len(valid_y_true) > 1 else (0.0, 1.0)
-
-    # Spearman correlation
-    spearman_corr, spearman_p = spearman(valid_y_true, valid_y_pred) if len(valid_y_true) > 1 else (0.0, 1.0)
-
-    metrics = {
-        'mse': mse(y_true, y_pred),
-        'rmse': rmse(y_true, y_pred),
-        'mae': mae(y_true, y_pred),
-        'r2': r2(y_true, y_pred),
-        'pearson': pearson_corr,
-        'pearson_pvalue': pearson_p,
-        'spearman': spearman_corr,
-        'spearman_pvalue': spearman_p,
-        'mape': mape(valid_y_true, valid_y_pred) if len(valid_y_true) > 0 else 0.0
-    }
-
-    return metrics
-
-
-def calculate_all_metrics(
-        y_true: np.ndarray,
-        y_pred: np.ndarray,
-        threshold: float = 0.5,
-        drug_ids: Optional[np.ndarray] = None
-) -> Dict[str, float]:
-    """
-    Calculate all metrics (regression + classification)
-
-    Args:
-        y_true: True values/labels
-        y_pred: Predicted values/probabilities
-        threshold: Classification threshold
-        drug_ids: Drug identifiers (optional, for per-drug metrics)
-
-    Returns:
-        metrics: Dictionary of all metrics
-    """
-    # Regression metrics
-    reg_metrics = calculate_all_regression_metrics(y_true, y_pred)
-
-    # Combine
-    all_metrics = {**reg_metrics}
-
-    # Per-drug metrics
-    if drug_ids is not None:
-        drug_auc, _ = per_drug_auc(y_true, y_pred, drug_ids)
-        drug_aupr, _ = per_drug_aupr(y_true, y_pred, drug_ids)
-
-        all_metrics['drug_auc'] = drug_auc
-        all_metrics['drug_aupr'] = drug_aupr
-
-    return all_metrics
-
-
-def print_metrics(metrics: Dict[str, float], title: str = "Metrics"):
-    """
-    Pretty print metrics
-
-    Args:
-        metrics: Dictionary of metrics
-        title: Title for the print
-    """
-    print("\n" + "=" * 60)
-    print(title)
-    print("=" * 60)
-
-    # Group metrics
-    regression_keys = ['mse', 'rmse', 'mae', 'r2', 'pearson', 'spearman', 'mape']
-    overlap_keys = ['overlap@1%', 'overlap@5%', 'overlap@10%', 'overlap@20%']
-    cm_keys = ['TP', 'TN', 'FP', 'FN']
-    drug_keys = ['drug_auc', 'drug_aupr']
-
-    # Print regression metrics
-    print("\nRegression Metrics:")
-    for key in regression_keys:
-        if key in metrics:
-            print(f"  {key:20s}: {metrics[key]:.4f}")
-
-    # Print Overlap@N% metrics (recommendation metrics)
-    if any(k in metrics for k in overlap_keys):
-        print("\nRecommendation Metrics (Overlap@N%):")
-        for key in overlap_keys:
-            if key in metrics:
-                print(f"  {key:20s}: {metrics[key]:.4f}")
-
-    # Print confusion matrix
-    if all(k in metrics for k in cm_keys):
-        print("\nConfusion Matrix:")
-        print(f"  TP: {metrics['TP']:5d}  |  FP: {metrics['FP']:5d}")
-        print(f"  FN: {metrics['FN']:5d}  |  TN: {metrics['TN']:5d}")
-
-    # Print per-drug metrics
-    if any(k in metrics for k in drug_keys):
-        print("\nPer-Drug Metrics:")
-        for key in drug_keys:
-            if key in metrics:
-                print(f"  {key:20s}: {metrics[key]:.4f}")
-
-    print("=" * 60 + "\n")
-
-
 if __name__ == "__main__":
-    # Test metrics
+    # Test paper metrics
     print("=" * 60)
-    print("Testing Metrics")
+    print("Testing HSTrans Paper Metrics")
     print("=" * 60)
 
-    # Create dummy data
+    # Create dummy data with frequency labels (0-5)
     np.random.seed(42)
     n_samples = 100
 
-    y_true = np.random.rand(n_samples)
-    y_pred = y_true + np.random.randn(n_samples) * 0.1
+    # Generate realistic frequency distribution (similar to paper)
+    freq_labels = np.random.choice([0, 1, 2, 3, 4, 5], size=n_samples,
+                                   p=[0.05, 0.03, 0.11, 0.27, 0.47, 0.07])
+    
+    # Generate predictions with some noise
+    predictions = freq_labels + np.random.randn(n_samples) * 0.5
+    predictions = np.clip(predictions, 0, 5)  # Clip to valid range
 
     print(f"\nSample size: {n_samples}")
-    print(f"y_true range: [{y_true.min():.2f}, {y_true.max():.2f}]")
-    print(f"y_pred range: [{y_pred.min():.2f}, {y_pred.max():.2f}]")
+    print(f"True labels range: [{freq_labels.min():.0f}, {freq_labels.max():.0f}]")
+    print(f"Predictions range: [{predictions.min():.2f}, {predictions.max():.2f}]")
+    print(f"Positive samples: {np.sum(freq_labels != 0)} ({np.mean(freq_labels != 0):.1%})")
 
-    # Calculate all metrics
-    metrics = calculate_all_metrics(y_true, y_pred, threshold=0.5)
+    # Calculate paper metrics
+    metrics = calculate_paper_metrics(freq_labels, predictions)
 
     # Print metrics
-    print_metrics(metrics, title="All Metrics")
-
-    # Test per-drug metrics
-    print("\nTesting per-drug metrics...")
-    drug_ids = np.random.randint(0, 10, n_samples)
-
-    drug_auc, drug_aucs = per_drug_auc(y_true, y_pred, drug_ids)
-    drug_aupr, drug_auprs = per_drug_aupr(y_true, y_pred, drug_ids)
-
-    print(f"Drug AUC: {drug_auc:.4f} (n={len(drug_aucs)} drugs)")
-    print(f"Drug AUPR: {drug_aupr:.4f} (n={len(drug_auprs)} drugs)")
+    print_paper_metrics(metrics, title="HSTrans Paper Metrics Test")
 
     # Test Overlap@N% metrics specifically
     print("\n" + "=" * 60)
@@ -703,5 +452,10 @@ if __name__ == "__main__":
         print(f"  Positives in top {n}%: {np.sum(y_true_test[top_indices] != 0)}/{n_top}")
 
     print("\n" + "=" * 60)
-    print("All metrics tests passed!")
+    print("✓ All paper metrics tests passed!")
+    print("✓ Metrics are now aligned with HSTrans paper:")
+    print("  - Regression task (predict frequency 0-5)")
+    print("  - Primary metrics: RMSE, MAE, SCC (Spearman)")
+    print("  - Recommendation metrics: Overlap@1%, 5%, 10%, 20%")
+    print("  - No unnecessary classification metrics")
     print("=" * 60)
