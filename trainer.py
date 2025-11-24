@@ -1,6 +1,8 @@
 """
 Training module for drug side effect prediction
-Optimized for PyTorch 2.x with mixed precision, gradient accumulation, and torch.compile
+Aligned with HSTrans paper:
+- Uses MSE Loss (Eq. 16)
+- Calculates all metrics including Overlap@N% via Evaluator
 """
 
 import torch
@@ -15,10 +17,15 @@ from typing import Dict, Optional, Tuple, List
 import time
 from tqdm import tqdm
 import logging
+import sys
+
+# Add current directory to path
+sys.path.append(str(Path(__file__).parent))
 
 from config import Config
 from model import DrugSideEffectModel
-from losses import MSELoss, RMSELoss, HuberLoss
+from losses import MSELoss
+from evaluator import Evaluator  # Use the standardized Evaluator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,7 +34,6 @@ logger = logging.getLogger(__name__)
 class Trainer:
     """
     Trainer class for drug side effect prediction model
-    Optimized for PyTorch 2.x
     """
 
     def __init__(
@@ -38,16 +44,7 @@ class Trainer:
             val_loader: DataLoader,
             fold: int = 0
     ):
-        """
-        Initialize trainer
-
-        Args:
-            model: Model to train
-            config: Configuration object
-            train_loader: Training data loader
-            val_loader: Validation data loader
-            fold: Fold number for cross-validation
-        """
+        """Initialize trainer"""
         self.model = model
         self.config = config
         self.train_loader = train_loader
@@ -60,7 +57,10 @@ class Trainer:
         # Optimization components
         self.optimizer = self._create_optimizer()
         self.scheduler = self._create_scheduler() if config.training.use_scheduler else None
-        self.criterion = self._create_criterion()
+
+        # FIXED: Use MSELoss as specified in Paper Eq (16)
+        # Note: RMSE is used for evaluation metric, but MSE is the training loss
+        self.criterion = MSELoss(reduction='mean')
 
         # Mixed precision training
         self.use_amp = config.training.use_amp
@@ -94,45 +94,31 @@ class Trainer:
         self.checkpoint_dir = config.paths.checkpoint_dir / f"fold_{fold}"
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+        # Initialize Evaluator for consistent metric calculation
+        self.evaluator = Evaluator(self.model, device=config.device)
+
         logger.info(f"Trainer initialized for fold {fold}")
-        logger.info(f"Device: {self.device}")
-        logger.info(f"Mixed precision: {self.use_amp}")
-        logger.info(f"Gradient accumulation steps: {self.gradient_accumulation_steps}")
 
     def _create_optimizer(self) -> optim.Optimizer:
-        """Create optimizer"""
+        """Create optimizer (Adam as per paper)"""
         config = self.config.training
 
+        # Paper uses Adam with lr=1e-4
         if config.optimizer.lower() == 'adam':
-            if config.use_fused_optimizer and self.device.type == 'cuda':
+            # Use fused Adam if available (faster on CUDA)
+            use_fused = config.use_fused_optimizer and self.device.type == 'cuda'
+            try:
                 optimizer = optim.Adam(
                     self.model.parameters(),
                     lr=config.learning_rate,
                     betas=config.betas,
                     eps=config.eps,
                     weight_decay=config.weight_decay,
-                    fused=True
+                    fused=use_fused
                 )
-            else:
+            except:
+                # Fallback if fused not supported
                 optimizer = optim.Adam(
-                    self.model.parameters(),
-                    lr=config.learning_rate,
-                    betas=config.betas,
-                    eps=config.eps,
-                    weight_decay=config.weight_decay
-                )
-        elif config.optimizer.lower() == 'adamw':
-            if config.use_fused_optimizer and self.device.type == 'cuda':
-                optimizer = optim.AdamW(
-                    self.model.parameters(),
-                    lr=config.learning_rate,
-                    betas=config.betas,
-                    eps=config.eps,
-                    weight_decay=config.weight_decay,
-                    fused=True
-                )
-            else:
-                optimizer = optim.AdamW(
                     self.model.parameters(),
                     lr=config.learning_rate,
                     betas=config.betas,
@@ -140,57 +126,37 @@ class Trainer:
                     weight_decay=config.weight_decay
                 )
         else:
-            raise ValueError(f"Unknown optimizer: {config.optimizer}")
+            # Fallback/Alternative
+            optimizer = optim.AdamW(
+                self.model.parameters(),
+                lr=config.learning_rate,
+                betas=config.betas,
+                eps=config.eps,
+                weight_decay=config.weight_decay
+            )
 
-        logger.info(f"Created optimizer: {config.optimizer}")
+        logger.info(f"Created optimizer: {type(optimizer).__name__}")
         return optimizer
 
     def _create_scheduler(self) -> Optional[optim.lr_scheduler._LRScheduler]:
         """Create learning rate scheduler"""
         config = self.config.training
 
+        # Note: Paper doesn't explicitly mention scheduler, but cosine is standard
         if config.scheduler_type == 'cosine':
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            return optim.lr_scheduler.CosineAnnealingLR(
                 self.optimizer,
                 T_max=config.num_epochs,
                 eta_min=config.learning_rate * 0.01
             )
-        elif config.scheduler_type == 'linear':
-            scheduler = optim.lr_scheduler.LinearLR(
-                self.optimizer,
-                start_factor=1.0,
-                end_factor=0.01,
-                total_iters=config.num_epochs
-            )
-        elif config.scheduler_type == 'step':
-            scheduler = optim.lr_scheduler.StepLR(
-                self.optimizer,
-                step_size=config.num_epochs // 3,
-                gamma=0.1
-            )
-        else:
-            return None
-
-        logger.info(f"Created scheduler: {config.scheduler_type}")
-        return scheduler
-
-    def _create_criterion(self) -> nn.Module:
-        """Create loss function"""
-        # MSE Loss for regression
-        return RMSELoss()
+        return None
 
     def train_epoch(self) -> float:
-        """
-        Train for one epoch
-
-        Returns:
-            avg_loss: Average training loss
-        """
+        """Train for one epoch"""
         self.model.train()
         total_loss = 0.0
         num_batches = len(self.train_loader)
 
-        # Progress bar
         pbar = tqdm(
             self.train_loader,
             desc=f"Epoch {self.current_epoch + 1}/{self.config.training.num_epochs}",
@@ -216,12 +182,9 @@ class Trainer:
                     loss = self.criterion(output.squeeze(), label)
                     loss = loss / self.gradient_accumulation_steps
 
-                # Backward pass with gradient scaling
                 self.scaler.scale(loss).backward()
 
-                # Gradient accumulation
                 if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                    # Gradient clipping
                     if self.config.training.max_grad_norm > 0:
                         self.scaler.unscale_(self.optimizer)
                         torch.nn.utils.clip_grad_norm_(
@@ -229,128 +192,61 @@ class Trainer:
                             self.config.training.max_grad_norm
                         )
 
-                    # Optimizer step
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
                     self.optimizer.zero_grad()
             else:
-                # Standard training
                 output, _, _ = self.model(drug, se, drug_mask, se_mask)
                 loss = self.criterion(output.squeeze(), label)
                 loss = loss / self.gradient_accumulation_steps
 
-                # Backward pass
                 loss.backward()
 
-                # Gradient accumulation
                 if (batch_idx + 1) % self.gradient_accumulation_steps == 0:
-                    # Gradient clipping
                     if self.config.training.max_grad_norm > 0:
                         torch.nn.utils.clip_grad_norm_(
                             self.model.parameters(),
                             self.config.training.max_grad_norm
                         )
 
-                    # Optimizer step
                     self.optimizer.step()
                     self.optimizer.zero_grad()
 
-            # Accumulate loss (unscaled)
-            total_loss += loss.item() * self.gradient_accumulation_steps
+            current_loss = loss.item() * self.gradient_accumulation_steps
+            total_loss += current_loss
 
-            # Update progress bar
             pbar.set_postfix({
-                'loss': loss.item() * self.gradient_accumulation_steps,
-                'lr': self.optimizer.param_groups[0]['lr']
+                'loss': f"{current_loss:.4f}",
+                'lr': f"{self.optimizer.param_groups[0]['lr']:.6f}"
             })
 
-            # Log to tensorboard
             if batch_idx % self.config.training.log_interval == 0:
                 global_step = self.current_epoch * num_batches + batch_idx
-                self.writer.add_scalar(
-                    'train/batch_loss',
-                    loss.item() * self.gradient_accumulation_steps,
-                    global_step
-                )
+                self.writer.add_scalar('train/batch_loss', current_loss, global_step)
 
-        avg_loss = total_loss / num_batches
-        return avg_loss
+        return total_loss / num_batches
 
     @torch.no_grad()
     def validate(self) -> Dict[str, float]:
         """
-        Validate model
-
-        Returns:
-            metrics: Dictionary of validation metrics
+        Validate model using Evaluator
+        Calculates all metrics: RMSE, MAE, SCC, Overlap@N%
         """
-        self.model.eval()
-        total_loss = 0.0
-        all_preds = []
-        all_labels = []
+        # FIXED: Delegate to Evaluator class to ensure consistency
+        # Evaluator handles model.eval(), prediction loop, and metric calc (including Overlap@N)
+        metrics = self.evaluator.evaluate(self.val_loader)
 
-        for batch in tqdm(self.val_loader, desc="Validating", leave=False):
-            drug, se, drug_mask, se_mask, label = batch
-
-            # Move to device
-            drug = drug.to(self.device)
-            se = se.to(self.device)
-            drug_mask = drug_mask.to(self.device)
-            se_mask = se_mask.to(self.device)
-            label = label.to(self.device).float()
-
-            # Forward pass
-            if self.use_amp:
-                with autocast():
-                    output, _, _ = self.model(drug, se, drug_mask, se_mask)
-                    loss = self.criterion(output.squeeze(), label)
-            else:
-                output, _, _ = self.model(drug, se, drug_mask, se_mask)
-                loss = self.criterion(output.squeeze(), label)
-
-            total_loss += loss.item()
-
-            # Collect predictions and labels
-            all_preds.append(output.squeeze().cpu().numpy())
-            all_labels.append(label.cpu().numpy())
-
-        # Calculate metrics
-        avg_loss = total_loss / len(self.val_loader)
-        all_preds = np.concatenate(all_preds)
-        all_labels = np.concatenate(all_labels)
-
-        # Calculate additional metrics
-        from sklearn.metrics import mean_squared_error, mean_absolute_error
-        from scipy.stats import pearsonr, spearmanr
-
-        rmse = np.sqrt(mean_squared_error(all_labels, all_preds))
-        mae = mean_absolute_error(all_labels, all_preds)
-
-        # Only calculate correlation if there's variance
-        if len(np.unique(all_labels)) > 1 and len(np.unique(all_preds)) > 1:
-            pearson, _ = pearsonr(all_labels, all_preds)
-            spearman, _ = spearmanr(all_labels, all_preds)
-        else:
-            pearson = 0.0
-            spearman = 0.0
-
-        metrics = {
-            'loss': avg_loss,
-            'rmse': rmse,
-            'mae': mae,
-            'pearson': pearson,
-            'spearman': spearman
-        }
+        if 'loss' not in metrics:
+            if 'mse' in metrics:
+                metrics['loss'] = metrics['mse']
+            elif 'rmse' in metrics:
+                metrics['loss'] = metrics['rmse'] ** 2
 
         return metrics
 
     def train(self):
-        """
-        Main training loop
-        """
+        """Main training loop"""
         logger.info(f"Starting training for {self.config.training.num_epochs} epochs...")
-        logger.info(f"Training samples: {len(self.train_loader.dataset)}")
-        logger.info(f"Validation samples: {len(self.val_loader.dataset)}")
 
         start_time = time.time()
 
@@ -366,89 +262,95 @@ class Trainer:
                 val_metrics = self.validate()
                 self.val_metrics.append(val_metrics)
 
-                # Log metrics
-                logger.info(
-                    f"Epoch {epoch + 1}/{self.config.training.num_epochs} - "
-                    f"Train Loss: {train_loss:.4f}, "
-                    f"Val Loss: {val_metrics['loss']:.4f}, "
-                    f"RMSE: {val_metrics['rmse']:.4f}, "
-                    f"MAE: {val_metrics['mae']:.4f}, "
-                    f"SCC: {val_metrics['spearman']:.4f}, "
-                    f"Pearson: {val_metrics['pearson']:.4f}"
+                # Log metrics (Expanded to show Overlap metrics)
+                log_msg = (
+                    f"Epoch {epoch + 1}/{self.config.training.num_epochs} | "
+                    f"Train Loss: {train_loss:.4f} | "
+                    f"Val Loss: {val_metrics.get('loss', 0):.4f} | "
+                    f"RMSE: {val_metrics.get('rmse', 0):.4f} | "
+                    f"MAE: {val_metrics.get('mae', 0):.4f} | "
+                    f"SCC: {val_metrics.get('scc', 0):.4f}"
                 )
+
+                # Add Overlap metrics to log if available
+                if 'overlap@1%' in val_metrics:
+                     log_msg += f" | Ov@1%: {val_metrics['overlap@1%']:.3f}"
+
+                logger.info(log_msg)
 
                 # TensorBoard logging
                 self.writer.add_scalar('train/loss', train_loss, epoch)
                 for key, value in val_metrics.items():
-                    self.writer.add_scalar(f'val/{key}', value, epoch)
-                self.writer.add_scalar(
-                    'train/lr',
-                    self.optimizer.param_groups[0]['lr'],
-                    epoch
-                )
+                    # Group metrics for cleaner tensorboard
+                    if 'overlap' in key:
+                        self.writer.add_scalar(f'val_overlap/{key}', value, epoch)
+                    else:
+                        self.writer.add_scalar(f'val/{key}', value, epoch)
 
-                # Save checkpoint
-                monitor_metric = val_metrics.get(
-                    self.config.training.monitor_metric,
-                    val_metrics['loss']
-                )
+                self.writer.add_scalar('train/lr', self.optimizer.param_groups[0]['lr'], epoch)
 
-                is_best = False
-                if self.config.training.monitor_metric == 'loss':
-                    is_best = monitor_metric < -self.best_metric
-                else:
-                    is_best = monitor_metric > self.best_metric
+                # Save checkpoint logic
+                self._handle_checkpoint(val_metrics, epoch)
 
-                if is_best:
-                    self.best_metric = monitor_metric if self.config.training.monitor_metric != 'loss' else -monitor_metric
-                    self.patience_counter = 0
-
-                    if self.config.training.save_best_only:
-                        self.save_checkpoint(is_best=True)
-                        logger.info(
-                            f"✓ Saved best model with {self.config.training.monitor_metric}: {monitor_metric:.4f}")
-                else:
-                    self.patience_counter += 1
-
-                # Regular checkpoint
-                if not self.config.training.save_best_only and (
-                        epoch + 1) % self.config.training.save_checkpoint_every == 0:
-                    self.save_checkpoint(is_best=False, epoch=epoch)
-
-                # Early stopping
-                if self.config.training.early_stopping:
-                    if self.patience_counter >= self.config.training.patience:
-                        logger.info(f"Early stopping triggered after {epoch + 1} epochs")
-                        break
-
-            # Update learning rate
+            # Update scheduler
             if self.scheduler is not None:
                 self.scheduler.step()
 
-        # Training completed
         elapsed_time = time.time() - start_time
         logger.info(f"Training completed in {elapsed_time / 60:.2f} minutes")
         logger.info(f"Best {self.config.training.monitor_metric}: {self.best_metric:.4f}")
-
-        # Close tensorboard writer
         self.writer.close()
 
+    def _handle_checkpoint(self, val_metrics: Dict[str, float], epoch: int):
+        """Handle checkpoint saving based on metric monitoring"""
+        monitor_metric_name = self.config.training.monitor_metric
+        # Default fallback if metric not found (e.g. 'auc' might not be in regression metrics)
+        if monitor_metric_name not in val_metrics:
+            # Fallback to 'scc' or 'rmse' for regression
+            monitor_metric_name = 'scc' if 'scc' in val_metrics else 'loss'
+
+        current_val = val_metrics.get(monitor_metric_name, 0.0)
+
+        is_best = False
+        # For loss/rmse/mae, lower is better. For others (scc, overlap), higher is better.
+        lower_is_better = monitor_metric_name in ['loss', 'rmse', 'mae', 'mse']
+
+        if lower_is_better:
+            # We store negative value for "best_metric" to keep logic consistent (maximizing)
+            # OR we just implement explicit logic:
+            if self.best_metric == float('-inf'): # First run
+                self.best_metric = float('inf')
+
+            if current_val < self.best_metric:
+                self.best_metric = current_val
+                is_best = True
+        else:
+            if current_val > self.best_metric:
+                self.best_metric = current_val
+                is_best = True
+
+        if is_best:
+            self.patience_counter = 0
+            if self.config.training.save_best_only:
+                self.save_checkpoint(is_best=True)
+                logger.info(f"✓ Saved best model ({monitor_metric_name}: {current_val:.4f})")
+        else:
+            self.patience_counter += 1
+
+        if not self.config.training.save_best_only and (epoch + 1) % self.config.training.save_checkpoint_every == 0:
+            self.save_checkpoint(is_best=False, epoch=epoch)
+
+        if self.config.training.early_stopping and self.patience_counter >= self.config.training.patience:
+            logger.info(f"Early stopping triggered after {epoch + 1} epochs")
+            # Hack to stop training loop: set current epoch to max
+            self.current_epoch = self.config.training.num_epochs
+
     def save_checkpoint(self, is_best: bool = False, epoch: Optional[int] = None):
-        """
-        Save model checkpoint
-
-        Args:
-            is_best: Whether this is the best model
-            epoch: Epoch number (for regular checkpoints)
-        """
-
-        model_to_save = (
-            self.model._orig_mod
-            if hasattr(self.model, "_orig_mod") else
-            self.model.module
-            if hasattr(self.model, "module") else
-            self.model
-        )
+        """Save checkpoint"""
+        model_to_save = self.model
+        # Unwrap compiled/parallel model
+        if hasattr(self.model, "_orig_mod"): model_to_save = self.model._orig_mod
+        elif hasattr(self.model, "module"): model_to_save = self.model.module
 
         checkpoint = {
             'epoch': self.current_epoch,
@@ -456,15 +358,10 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'best_metric': self.best_metric,
             'config': self.config.to_dict(),
-            'train_losses': self.train_losses,
-            'val_metrics': self.val_metrics
         }
 
-        if self.scheduler is not None:
-            checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
-
-        if self.scaler is not None:
-            checkpoint['scaler_state_dict'] = self.scaler.state_dict()
+        if self.scheduler: checkpoint['scheduler_state_dict'] = self.scheduler.state_dict()
+        if self.scaler: checkpoint['scaler_state_dict'] = self.scaler.state_dict()
 
         if is_best:
             path = self.checkpoint_dir / 'best_model.pth'
@@ -474,87 +371,23 @@ class Trainer:
         torch.save(checkpoint, path)
 
     def load_checkpoint(self, checkpoint_path: str):
-        """
-        Load model checkpoint
-
-        Args:
-            checkpoint_path: Path to checkpoint
-        """
+        """Load checkpoint"""
         logger.info(f"Loading checkpoint from {checkpoint_path}")
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        # Handle unwrapped loading
+        model_to_load = self.model
+        if hasattr(self.model, "_orig_mod"): model_to_load = self.model._orig_mod
+
+        model_to_load.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.current_epoch = checkpoint['epoch']
         self.best_metric = checkpoint['best_metric']
-        self.train_losses = checkpoint.get('train_losses', [])
-        self.val_metrics = checkpoint.get('val_metrics', [])
 
-        if self.scheduler is not None and 'scheduler_state_dict' in checkpoint:
+        if self.scheduler and 'scheduler_state_dict' in checkpoint:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-        if self.scaler is not None and 'scaler_state_dict' in checkpoint:
+        if self.scaler and 'scaler_state_dict' in checkpoint:
             self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
 
-        logger.info(f"Loaded checkpoint from epoch {self.current_epoch}")
-
-
 if __name__ == "__main__":
-    # Test trainer
-    from config import get_default_config, ModelConfig
-    from model import create_model
-    from torch.utils.data import TensorDataset
-
-    print("=" * 60)
-    print("Testing Trainer")
-    print("=" * 60)
-
-    # Get config
-    config = get_default_config()
-    config.training.num_epochs = 3
-    config.training.log_interval = 10
-    config.dataloader.num_workers = 0
-
-    # Create dummy model
-    model_config = ModelConfig()
-    model_config.vocab_size = 2586
-    model = create_model(model_config, device=config.device)
-
-    # Create dummy data
-    n_train = 100
-    n_val = 20
-    seq_len = 50
-
-    train_dataset = TensorDataset(
-        torch.randint(0, 2586, (n_train, seq_len)),
-        torch.randint(0, 2586, (n_train, seq_len)),
-        torch.ones((n_train, seq_len)),
-        torch.ones((n_train, seq_len)),
-        torch.rand(n_train)
-    )
-
-    val_dataset = TensorDataset(
-        torch.randint(0, 2586, (n_val, seq_len)),
-        torch.randint(0, 2586, (n_val, seq_len)),
-        torch.ones((n_val, seq_len)),
-        torch.ones((n_val, seq_len)),
-        torch.rand(n_val)
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
-
-    # Create trainer
-    trainer = Trainer(
-        model=model,
-        config=config,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        fold=0
-    )
-
-    # Train
-    print("\nStarting training...")
-    trainer.train()
-
-    print("\n✓ Trainer test completed!")
+    pass

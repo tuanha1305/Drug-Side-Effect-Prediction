@@ -218,3 +218,4 @@ __marimo__/
 logs/
 checkpoints/
 data/cache
+data/processed

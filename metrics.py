@@ -98,16 +98,8 @@ def spearman(y_true: np.ndarray, y_pred: np.ndarray) -> Tuple[float, float]:
         correlation: Spearman correlation coefficient
         p_value: Two-tailed p-value
     """
-    # Filter out zeros for meaningful correlation (as per paper)
-    valid_mask = y_true != 0
-    valid_y_true = y_true[valid_mask]
-    valid_y_pred = y_pred[valid_mask]
-
-    if len(valid_y_true) < 2 or len(np.unique(valid_y_true)) < 2:
-        return 0.0, 1.0
-
     try:
-        corr, p_val = spearmanr(valid_y_true, valid_y_pred)
+        corr, p_val = spearmanr(y_true, y_pred)
         return float(corr), float(p_val)
     except:
         return 0.0, 1.0

@@ -28,10 +28,10 @@ class Evaluator:
     Task: Regression - predict frequency scores (0-5)
 
     Evaluation metrics (from paper):
-    - RMSE: Root Mean Squared Error
-    - MAE: Mean Absolute Error
-    - SCC: Spearman's rank correlation coefficient
-    - Overlap@N%: Recommendation metric for top-N% predictions
+    - RMSE: Root Mean Squared Error [cite: 287]
+    - MAE: Mean Absolute Error [cite: 287]
+    - SCC: Spearman's rank correlation coefficient [cite: 292]
+    - Overlap@N%: Recommendation metric for top-N% predictions [cite: 296]
     """
 
     def __init__(
@@ -41,10 +41,6 @@ class Evaluator:
     ):
         """
         Initialize evaluator
-
-        Args:
-            model: Model to evaluate
-            device: Device to use
         """
         self.model = model
         self.device = torch.device(device)
@@ -59,13 +55,6 @@ class Evaluator:
     ) -> Dict[str, np.ndarray]:
         """
         Get predictions from model
-
-        Args:
-            data_loader: Data loader
-            return_embeddings: Whether to return embeddings
-
-        Returns:
-            results: Dictionary with predictions, labels, and optionally embeddings
         """
         all_preds = []
         all_labels = []
@@ -111,53 +100,40 @@ class Evaluator:
             labels: np.ndarray
     ) -> Dict[str, float]:
         """
-        Evaluate regression metrics according to paper
+        Evaluate regression metrics according to paper.
 
-        Metrics:
-        - MSE: Mean Squared Error
-        - RMSE: Root Mean Squared Error
-        - MAE: Mean Absolute Error
-        - Pearson: Pearson correlation coefficient
-        - Spearman (SCC): Spearman's rank correlation coefficient
-        - Overlap@N%: Recommendation metrics for top N% predictions
-
-        Args:
-            predictions: Predicted frequency scores
-            labels: True frequency labels (0-5)
-
-        Returns:
-            metrics: Dictionary of all evaluation metrics
+        CORRECTION:
+        SCC (Spearman) is calculated on the full test set N (Equation 19),
+        which includes both positive and negative (0) samples[cite: 279, 294].
         """
-        # MSE and RMSE
+        # MSE and RMSE [cite: 287]
         mse = mean_squared_error(labels, predictions)
         rmse = np.sqrt(mse)
 
-        # MAE
+        # MAE [cite: 287]
         mae = mean_absolute_error(labels, predictions)
 
-        # Correlation metrics (filter out zeros for meaningful correlation)
-        # According to paper, correlation is computed on non-zero samples
-        valid_mask = labels != 0
-        valid_preds = predictions[valid_mask]
-        valid_labels = labels[valid_mask]
-
+        # Correlation metrics
+        # FIXED: Calculated on ALL samples (including class 0) to match
+        # the definition of N in Equation 19.
         pearson_corr = 0.0
         pearson_p = 1.0
         spearman_corr = 0.0
         spearman_p = 1.0
 
-        if len(valid_labels) > 1 and len(np.unique(valid_labels)) > 1:
-            try:
-                pearson_corr, pearson_p = pearsonr(valid_labels, valid_preds)
-            except:
-                pass
+        # Pearson
+        try:
+            pearson_corr, pearson_p = pearsonr(labels, predictions)
+        except Exception:
+            pass
 
-            try:
-                spearman_corr, spearman_p = spearmanr(valid_labels, valid_preds)
-            except:
-                pass
+        # Spearman (SCC) [cite: 292]
+        try:
+            spearman_corr, spearman_p = spearmanr(labels, predictions)
+        except Exception:
+            pass
 
-        # Overlap@N% metrics (recommendation metrics from paper)
+        # Overlap@N% metrics (recommendation metrics from paper) [cite: 296]
         # These evaluate ranking quality for top-N% predictions
         overlap_metrics = {}
         for n in [1, 5, 10, 20]:
@@ -181,96 +157,12 @@ class Evaluator:
 
         return metrics
 
-    def evaluate_per_drug(
-            self,
-            predictions: np.ndarray,
-            labels: np.ndarray,
-            drug_ids: np.ndarray
-    ) -> Dict[str, float]:
-        """
-        Evaluate metrics per drug (average across drugs)
-
-        Note: Paper does not mention per-drug metrics explicitly,
-        but this can be useful for analysis.
-
-        Args:
-            predictions: Predicted frequency scores
-            labels: True frequency labels
-            drug_ids: Drug identifiers
-
-        Returns:
-            metrics: Dictionary of per-drug aggregated metrics
-        """
-        unique_drugs = np.unique(drug_ids)
-
-        drug_rmse_scores = []
-        drug_mae_scores = []
-        drug_scc_scores = []
-
-        for drug_id in unique_drugs:
-            mask = drug_ids == drug_id
-            drug_preds = predictions[mask]
-            drug_labels = labels[mask]
-
-            # Skip if insufficient data
-            if len(drug_labels) < 2:
-                continue
-
-            # RMSE
-            try:
-                mse = mean_squared_error(drug_labels, drug_preds)
-                rmse = np.sqrt(mse)
-                drug_rmse_scores.append(rmse)
-            except:
-                pass
-
-            # MAE
-            try:
-                mae = mean_absolute_error(drug_labels, drug_preds)
-                drug_mae_scores.append(mae)
-            except:
-                pass
-
-            # SCC (Spearman)
-            valid_mask = drug_labels != 0
-            if valid_mask.sum() > 1:
-                try:
-                    scc, _ = spearmanr(drug_labels[valid_mask], drug_preds[valid_mask])
-                    if not np.isnan(scc):
-                        drug_scc_scores.append(scc)
-                except:
-                    pass
-
-        metrics = {
-            'per_drug_rmse': float(np.mean(drug_rmse_scores)) if drug_rmse_scores else 0.0,
-            'per_drug_mae': float(np.mean(drug_mae_scores)) if drug_mae_scores else 0.0,
-            'per_drug_scc': float(np.mean(drug_scc_scores)) if drug_scc_scores else 0.0,
-            'num_drugs_evaluated': len(drug_rmse_scores)
-        }
-
-        return metrics
-
     def evaluate(
             self,
-            data_loader: DataLoader,
-            evaluate_per_drug: bool = False,
-            drug_ids: Optional[np.ndarray] = None
+            data_loader: DataLoader
     ) -> Dict[str, float]:
         """
         Complete evaluation with all metrics from paper
-
-        Metrics computed:
-        - RMSE, MAE: Frequency prediction accuracy
-        - Pearson, Spearman (SCC): Association prediction
-        - Overlap@1%, 5%, 10%, 20%: Recommendation performance
-
-        Args:
-            data_loader: Data loader
-            evaluate_per_drug: Whether to calculate per-drug metrics
-            drug_ids: Drug IDs (required if evaluate_per_drug=True)
-
-        Returns:
-            metrics: Dictionary with all metrics
         """
         logger.info("Starting evaluation...")
 
@@ -282,12 +174,6 @@ class Evaluator:
         # Evaluate regression metrics (includes Overlap@N%)
         logger.info("Computing regression and ranking metrics...")
         all_metrics = self.evaluate_regression(predictions, labels)
-
-        # Per-drug metrics (optional)
-        if evaluate_per_drug and drug_ids is not None:
-            logger.info("Computing per-drug metrics...")
-            per_drug_metrics = self.evaluate_per_drug(predictions, labels, drug_ids)
-            all_metrics.update(per_drug_metrics)
 
         # Add summary statistics
         all_metrics.update({
@@ -302,14 +188,7 @@ class Evaluator:
 
     def print_metrics(self, metrics: Dict[str, float]):
         """
-        Pretty print metrics according to paper format
-
-        Paper metrics (Table 1):
-        - RMSE, MAE, SCC (Spearman)
-        - Overlap@1%, 5%, 10%, 20%
-
-        Args:
-            metrics: Dictionary of metrics
+        Pretty print metrics according to paper format (Table 1)
         """
         print("\n" + "=" * 60)
         print("Evaluation Metrics (HSTrans Paper Format)")
@@ -338,19 +217,6 @@ class Evaluator:
                 if key in metrics:
                     print(f"  {key:15s}: {metrics[key]:.4f}")
 
-        # Per-drug metrics (if computed)
-        per_drug_keys = ['per_drug_rmse', 'per_drug_mae', 'per_drug_scc']
-        if any(k in metrics for k in per_drug_keys):
-            print("\nPer-Drug Metrics:")
-            if 'per_drug_rmse' in metrics:
-                print(f"  Avg RMSE:  {metrics['per_drug_rmse']:.4f}")
-            if 'per_drug_mae' in metrics:
-                print(f"  Avg MAE:   {metrics['per_drug_mae']:.4f}")
-            if 'per_drug_scc' in metrics:
-                print(f"  Avg SCC:   {metrics['per_drug_scc']:.4f}")
-            if 'num_drugs_evaluated' in metrics:
-                print(f"  Num drugs: {metrics['num_drugs_evaluated']}")
-
         # Dataset statistics
         if 'num_samples' in metrics:
             print("\nDataset Statistics:")
@@ -368,11 +234,6 @@ class Evaluator:
     ):
         """
         Save predictions to file
-
-        Args:
-            predictions: Predicted frequency scores (continuous)
-            labels: True frequency labels (0-5)
-            output_path: Output file path
         """
         import pandas as pd
 
@@ -394,15 +255,7 @@ class Evaluator:
     ) -> Dict[str, str]:
         """
         Aggregate results from multiple folds (5-fold CV as in paper)
-
-        Paper format: "mean ± std" (e.g., "1.390 ± 0.009")
-
-        Args:
-            fold_metrics: List of metric dictionaries from each fold
-            display_format: 'paper' for "mean ± std", 'dict' for separate mean/std
-
-        Returns:
-            aggregated: Dictionary with aggregated metrics
+        Paper format: "mean ± std"
         """
         if len(fold_metrics) == 0:
             return {}
@@ -447,10 +300,6 @@ class Evaluator:
     ):
         """
         Print aggregated fold results in paper format
-
-        Args:
-            aggregated_metrics: Aggregated metrics from aggregate_fold_results()
-            title: Title for the output
         """
         print("\n" + "=" * 60)
         print(title)
@@ -477,40 +326,6 @@ class Evaluator:
                 print(f"  {key:15s}: {aggregated_metrics[key]}")
 
         print("=" * 60 + "\n")
-
-
-def compare_models(
-        evaluators: List[Evaluator],
-        data_loader: DataLoader,
-        model_names: Optional[List[str]] = None
-):
-    """
-    Compare multiple models
-
-    Args:
-        evaluators: List of evaluators
-        data_loader: Data loader
-        model_names: Names of models (optional)
-
-    Returns:
-        comparison_df: DataFrame with comparison
-    """
-
-    if model_names is None:
-        model_names = [f"Model {i + 1}" for i in range(len(evaluators))]
-
-    results = []
-
-    for evaluator, name in zip(evaluators, model_names):
-        logger.info(f"Evaluating {name}...")
-        metrics = evaluator.evaluate(data_loader)
-        metrics['model'] = name
-        results.append(metrics)
-
-    df = pd.DataFrame(results)
-    df = df.set_index('model')
-
-    return df
 
 
 if __name__ == "__main__":

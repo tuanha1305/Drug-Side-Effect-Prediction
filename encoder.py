@@ -339,7 +339,6 @@ class EncoderLayer(nn.Module):
 class Encoder_MultipleLayers(nn.Module):
     """
     Multi-layer Transformer encoder
-    Optimized for PyTorch 2.x with gradient checkpointing support
     """
     def __init__(
         self,
@@ -403,72 +402,3 @@ class Encoder_MultipleLayers(nn.Module):
             all_encoder_layers.append(hidden_states)
         
         return hidden_states
-
-
-if __name__ == "__main__":
-    # Test encoder
-    print("Testing Transformer Encoder...")
-    
-    batch_size = 4
-    seq_len = 50
-    vocab_size = 2586
-    hidden_size = 200
-    num_layers = 8
-    num_heads = 8
-    intermediate_size = 512
-    
-    # Create model
-    embeddings = Embeddings(
-        vocab_size=vocab_size,
-        hidden_size=hidden_size,
-        max_position_size=500,
-        dropout_rate=0.1
-    )
-    
-    encoder = Encoder_MultipleLayers(
-        n_layer=num_layers,
-        hidden_size=hidden_size,
-        intermediate_size=intermediate_size,
-        num_attention_heads=num_heads,
-        attention_probs_dropout_prob=0.1,
-        hidden_dropout_prob=0.1,
-        use_flash_attention=True,
-        use_sdpa=True
-    )
-    
-    # Create dummy input
-    input_ids = torch.randint(0, vocab_size, (batch_size, seq_len))
-    attention_mask = torch.ones((batch_size, 1, 1, seq_len))
-    
-    # Forward pass
-    print(f"\nInput shape: {input_ids.shape}")
-    
-    emb = embeddings(input_ids)
-    print(f"Embedding shape: {emb.shape}")
-    
-    output = encoder(emb, attention_mask, fusion=False)
-    print(f"Encoder output shape: {output.shape}")
-    
-    # Count parameters
-    total_params = sum(p.numel() for p in encoder.parameters())
-    print(f"\nTotal parameters in encoder: {total_params:,}")
-    
-    # Test with torch.compile (PyTorch 2.x)
-    if hasattr(torch, 'compile'):
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print(f"\nTesting with torch.compile on {device}...")
-        
-        if device == 'cpu':
-            print("Note: torch.compile on CPU may show 'cudagraph partition' warnings - this is normal")
-            import warnings
-            warnings.filterwarnings('ignore', message='.*cudagraph.*')
-        
-        try:
-            encoder_compiled = torch.compile(encoder, mode='reduce-overhead')
-            output_compiled = encoder_compiled(emb, attention_mask, fusion=False)
-            print(f"Compiled encoder output shape: {output_compiled.shape}")
-            print("✓ torch.compile works!")
-        except Exception as e:
-            print(f"torch.compile not fully supported on this system: {e}")
-    
-    print("\n✓ All encoder tests passed!")

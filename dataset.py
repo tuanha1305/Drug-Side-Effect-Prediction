@@ -1,19 +1,19 @@
 """
 Dataset classes for drug side effect prediction
-Optimized for PyTorch 2.x with caching and efficient data loading
+Aligned with HSTrans paper methodology:
+- Regression task (Frequency 0-5) [cite: 110, 256]
+- Balanced Negative Sampling (1:1 ratio)
+- Substructure encoding [cite: 112]
 """
 
 import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import pandas as pd
-from pathlib import Path
 from typing import Tuple, Optional, Dict, List
-import pickle
-from functools import lru_cache
 import logging
 
-from config import Config, DataConfig
+from config import Config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -22,9 +22,8 @@ logger = logging.getLogger(__name__)
 class DrugSideEffectDataset(Dataset):
     """
     Dataset for drug-side effect prediction
-    Optimized for PyTorch 2.x with efficient data loading
     """
-    
+
     def __init__(
         self,
         df: pd.DataFrame,
@@ -40,11 +39,11 @@ class DrugSideEffectDataset(Dataset):
         Args:
             df: DataFrame with columns ['SE_id', 'Drug_smile', 'Label']
             indices: Indices to use from df
-            labels: Labels array
-            se_index: Pre-computed side effect substructure indices [994, 50]
-            se_mask: Pre-computed side effect masks [994, 50]
+            labels: Labels array (Frequency scores)
+            se_index: Pre-computed side effect substructure indices
+            se_mask: Pre-computed side effect masks
             smiles_encoder: Function to encode SMILES strings
-            fold: Fold number for cross-validation
+            fold: Fold number
             cache_encoded: Cache encoded SMILES for faster loading
         """
         self.df = df
@@ -55,70 +54,73 @@ class DrugSideEffectDataset(Dataset):
         self.smiles_encoder = smiles_encoder
         self.fold = fold
         self.cache_encoded = cache_encoded
-        
+
         # Cache for encoded SMILES
         self._smiles_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
-        
-        # Pre-encode all SMILES if caching is enabled
+
         if self.cache_encoded:
             self._precompute_encodings()
-    
+
     def _precompute_encodings(self):
         """Pre-compute and cache all SMILES encodings"""
-        logger.info(f"Pre-computing SMILES encodings for fold {self.fold}...")
-        unique_smiles = self.df['Drug_smile'].unique()
-        
+        # Only precompute for the drugs in the current split to save memory
+        subset_df = self.df.iloc[self.indices]
+        unique_smiles = subset_df['Drug_smile'].unique()
+
+        count = 0
         for smile in unique_smiles:
             if smile not in self._smiles_cache:
                 encoded, mask = self.smiles_encoder.encode(smile)
                 self._smiles_cache[smile] = (encoded, mask)
-        
-        logger.info(f"Cached {len(self._smiles_cache)} unique SMILES encodings")
-    
+                count += 1
+        logger.info(f"Cached {count} unique SMILES encodings for fold {self.fold}")
+
     def __len__(self) -> int:
         return len(self.indices)
-    
+
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
         """
         Get a single sample
-        
-        Returns:
-            drug_encoded: Drug SMILES encoding [50]
-            se_indices: Side effect substructure indices [50]
-            drug_mask: Drug attention mask [50]
-            se_mask: Side effect attention mask [50]
-            label: Label (0 or 1)
+        Returns tensors formatted for HSTrans model
         """
         # Get actual index in dataframe
         data_idx = self.indices[idx]
-        
+
         # Get drug SMILES and side effect ID
-        drug_smile = self.df.iloc[data_idx]['Drug_smile']
-        se_id = int(self.df.iloc[data_idx]['SE_id'])
-        label = self.labels[data_idx]
-        
-        # Encode drug SMILES
+        row = self.df.iloc[data_idx]
+        drug_smile = row['Drug_smile']
+        se_id = int(row['SE_id'])
+
+        # Get label (Frequency 0-5)
+        # Paper uses regression (MSE), so label must be float [cite: 257]
+        label_val = self.labels[data_idx]
+
+        # Encode drug SMILES (Get drug substructures)
         if self.cache_encoded and drug_smile in self._smiles_cache:
             drug_encoded, drug_mask = self._smiles_cache[drug_smile]
         else:
             drug_encoded, drug_mask = self.smiles_encoder.encode(drug_smile)
             if self.cache_encoded:
                 self._smiles_cache[drug_smile] = (drug_encoded, drug_mask)
-        
-        # Get side effect encoding
+
+        # Get side effect encoding (Get SE substructures)
         se_indices = self.se_index[se_id, :]
         se_mask_val = self.se_mask[se_id, :]
-        
+
         # Convert to tensors
+        # Indices must be Long for Embedding layers
         drug_encoded = torch.from_numpy(drug_encoded).long()
         se_indices = torch.from_numpy(se_indices).long()
+
+        # Masks can be Long or Float, keeping Long for consistency
         drug_mask = torch.from_numpy(drug_mask).long()
         se_mask_val = torch.from_numpy(se_mask_val).long()
-        # Keep label as float for regression (frequency values 0-5)
-        label = torch.tensor(float(label), dtype=torch.float32)
-        
+
+        # Label must be Float for MSELoss
+        label = torch.tensor(float(label_val), dtype=torch.float32)
+
         return drug_encoded, se_indices, drug_mask, se_mask_val, label
-    
+
     def get_statistics(self) -> Dict[str, float]:
         """Get dataset statistics"""
         labels = self.labels[self.indices]
@@ -126,41 +128,70 @@ class DrugSideEffectDataset(Dataset):
             'total_samples': len(self),
             'positive_samples': int(np.sum(labels > 0)),
             'negative_samples': int(np.sum(labels == 0)),
-            'positive_ratio': float(np.mean(labels > 0)),
-            'unique_drugs': len(self.df['Drug_smile'].unique()),
-            'unique_side_effects': len(self.df['SE_id'].unique())
+            'positive_ratio': float(np.mean(labels > 0))
         }
 
 
 class DrugSideEffectDataModule:
     """
     Data module for handling data loading and preprocessing
-    Optimized for PyTorch 2.x
     """
-    
+
     def __init__(
         self,
         config: Config,
         smiles_encoder,
         fold: int = 0
     ):
-        """
-        Args:
-            config: Configuration object
-            smiles_encoder: Function to encode SMILES strings
-            fold: Current fold number for cross-validation
-        """
         self.config = config
         self.data_config = config.data
         self.dataloader_config = config.dataloader
         self.smiles_encoder = smiles_encoder
         self.fold = fold
-        
-        # Datasets
+
         self.train_dataset: Optional[DrugSideEffectDataset] = None
         self.val_dataset: Optional[DrugSideEffectDataset] = None
-        self.test_dataset: Optional[DrugSideEffectDataset] = None
-    
+
+    def _balance_indices(self, indices: np.ndarray, labels: np.ndarray) -> np.ndarray:
+        """
+        Perform Negative Sampling as described in HSTrans paper.
+        "To ensure a balance between positive and negative samples, we randomly
+        selected 37,071 instances of class 0 data as negative samples."
+
+        Args:
+            indices: Array of indices (e.g., for training set)
+            labels: Full labels array
+
+        Returns:
+            balanced_indices: Indices with 1:1 Positive:Negative ratio
+        """
+        # Get labels for these indices
+        subset_labels = labels[indices]
+
+        # Identify positive and negative indices within this subset
+        pos_mask = subset_labels > 0
+        neg_mask = subset_labels == 0
+
+        pos_indices = indices[pos_mask]
+        neg_indices = indices[neg_mask]
+
+        n_pos = len(pos_indices)
+        n_neg = len(neg_indices)
+
+        if n_neg > n_pos:
+            logger.info(f"Balancing data: Downsampling negatives from {n_neg} to {n_pos} (1:1 ratio)")
+            # Randomly select negatives to match positives
+            np.random.seed(self.config.training.seed + self.fold) # Ensure reproducibility per fold
+            selected_neg_indices = np.random.choice(neg_indices, size=n_pos, replace=False)
+
+            # Combine
+            balanced_indices = np.concatenate([pos_indices, selected_neg_indices])
+            np.random.shuffle(balanced_indices)
+            return balanced_indices
+        else:
+            logger.info(f"Data already balanced or positives > negatives (Pos: {n_pos}, Neg: {n_neg})")
+            return indices
+
     def setup(
         self,
         train_df: pd.DataFrame,
@@ -170,36 +201,37 @@ class DrugSideEffectDataModule:
         val_indices: np.ndarray,
         val_labels: np.ndarray,
         se_index: np.ndarray,
-        se_mask: np.ndarray
+        se_mask: np.ndarray,
+        balance_train: bool = True
     ):
         """
         Setup datasets with data splits
-        
+
         Args:
-            train_df: Training dataframe
-            train_indices: Training indices
-            train_labels: Training labels
-            val_df: Validation dataframe
-            val_indices: Validation indices
-            val_labels: Validation labels
-            se_index: Side effect indices array
-            se_mask: Side effect mask array
+            balance_train: Whether to balance training data (Default True for HSTrans)
         """
         logger.info(f"Setting up datasets for fold {self.fold}...")
-        
+
+        # === 1. Balance Training Data (Crucial for HSTrans) ===
+        if balance_train:
+            final_train_indices = self._balance_indices(train_indices, train_labels)
+        else:
+            final_train_indices = train_indices
+
         # Create training dataset
         self.train_dataset = DrugSideEffectDataset(
             df=train_df,
-            indices=train_indices,
+            indices=final_train_indices,
             labels=train_labels,
             se_index=se_index,
             se_mask=se_mask,
             smiles_encoder=self.smiles_encoder,
-            fold=self.fold,
-            cache_encoded=True
+            fold=self.fold
         )
-        
-        # Create validation dataset
+
+        # Create validation dataset (Validation usually reflects real distribution,
+        # but paper implies CV on the balanced dataset[cite: 280].
+        # If val_indices came from the already balanced split, _balance_indices won't do anything harm).
         self.val_dataset = DrugSideEffectDataset(
             df=val_df,
             indices=val_indices,
@@ -207,116 +239,38 @@ class DrugSideEffectDataModule:
             se_index=se_index,
             se_mask=se_mask,
             smiles_encoder=self.smiles_encoder,
-            fold=self.fold,
-            cache_encoded=True
+            fold=self.fold
         )
-        
-        # Log statistics
+
         train_stats = self.train_dataset.get_statistics()
-        val_stats = self.val_dataset.get_statistics()
-        
-        logger.info(f"Train set: {train_stats['total_samples']} samples "
-                   f"({train_stats['positive_ratio']:.2%} positive)")
-        logger.info(f"Val set: {val_stats['total_samples']} samples "
-                   f"({val_stats['positive_ratio']:.2%} positive)")
-    
+        logger.info(f"Train set (Final): {train_stats['total_samples']} samples "
+                   f"(Pos: {train_stats['positive_samples']}, Neg: {train_stats['negative_samples']})")
+
     def train_dataloader(self) -> DataLoader:
-        """Create training dataloader optimized for PyTorch 2.x"""
         return DataLoader(
             self.train_dataset,
             batch_size=self.config.training.batch_size,
             shuffle=self.dataloader_config.shuffle_train,
             num_workers=self.dataloader_config.num_workers,
             pin_memory=self.dataloader_config.pin_memory,
-            persistent_workers=self.dataloader_config.persistent_workers 
+            persistent_workers=self.dataloader_config.persistent_workers
                 if self.dataloader_config.num_workers > 0 else False,
-            prefetch_factor=self.dataloader_config.prefetch_factor 
-                if self.dataloader_config.num_workers > 0 else None,
             drop_last=self.dataloader_config.drop_last_train
         )
-    
+
     def val_dataloader(self) -> DataLoader:
-        """Create validation dataloader"""
         return DataLoader(
             self.val_dataset,
             batch_size=self.config.training.batch_size,
             shuffle=self.dataloader_config.shuffle_val,
             num_workers=self.dataloader_config.num_workers,
             pin_memory=self.dataloader_config.pin_memory,
-            persistent_workers=self.dataloader_config.persistent_workers 
+            persistent_workers=self.dataloader_config.persistent_workers
                 if self.dataloader_config.num_workers > 0 else False,
-            prefetch_factor=self.dataloader_config.prefetch_factor 
-                if self.dataloader_config.num_workers > 0 else None,
             drop_last=self.dataloader_config.drop_last_val
         )
-    
-    def test_dataloader(self) -> DataLoader:
-        """Create test dataloader"""
-        if self.test_dataset is None:
-            raise ValueError("Test dataset not setup. Call setup() with test data first.")
-        
-        return DataLoader(
-            self.test_dataset,
-            batch_size=self.config.training.batch_size,
-            shuffle=self.dataloader_config.shuffle_test,
-            num_workers=self.dataloader_config.num_workers,
-            pin_memory=self.dataloader_config.pin_memory,
-            persistent_workers=self.dataloader_config.persistent_workers 
-                if self.dataloader_config.num_workers > 0 else False,
-            prefetch_factor=self.dataloader_config.prefetch_factor 
-                if self.dataloader_config.num_workers > 0 else None,
-            drop_last=False
-        )
 
-
-def collate_fn_custom(batch: List[Tuple]) -> Tuple[torch.Tensor, ...]:
-    """
-    Custom collate function for batching
-    Can be extended for dynamic padding or other custom logic
-    
-    Args:
-        batch: List of samples from __getitem__
-        
-    Returns:
-        Batched tensors
-    """
-    drugs, ses, drug_masks, se_masks, labels = zip(*batch)
-    
-    return (
-        torch.stack(drugs),
-        torch.stack(ses),
-        torch.stack(drug_masks),
-        torch.stack(se_masks),
-        torch.stack(labels)
-    )
-
-
-class CachedDataset(Dataset):
-    """
-    Dataset with full caching for faster epoch iterations
-    Useful when dataset fits in memory
-    """
-    
-    def __init__(self, base_dataset: DrugSideEffectDataset):
-        """
-        Args:
-            base_dataset: Base dataset to cache
-        """
-        self.base_dataset = base_dataset
-        self._cache = []
-        
-        logger.info("Caching entire dataset in memory...")
-        for idx in range(len(base_dataset)):
-            self._cache.append(base_dataset[idx])
-        logger.info(f"Cached {len(self._cache)} samples")
-    
-    def __len__(self) -> int:
-        return len(self._cache)
-    
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, ...]:
-        return self._cache[idx]
-
-
+# Helper function preserved for compatibility
 def create_dataloaders(
     config: Config,
     train_df: pd.DataFrame,
@@ -330,18 +284,13 @@ def create_dataloaders(
     smiles_encoder,
     fold: int = 0
 ) -> Tuple[DataLoader, DataLoader]:
-    """
-    Convenience function to create train and validation dataloaders
-    
-    Returns:
-        train_loader, val_loader
-    """
+
     data_module = DrugSideEffectDataModule(
         config=config,
         smiles_encoder=smiles_encoder,
         fold=fold
     )
-    
+
     data_module.setup(
         train_df=train_df,
         train_indices=train_indices,
@@ -350,69 +299,8 @@ def create_dataloaders(
         val_indices=val_indices,
         val_labels=val_labels,
         se_index=se_index,
-        se_mask=se_mask
-    )
-    
-    train_loader = data_module.train_dataloader()
-    val_loader = data_module.val_dataloader()
-    
-    return train_loader, val_loader
-
-
-if __name__ == "__main__":
-    # Test dataset
-    from config import get_default_config
-    
-    config = get_default_config()
-    
-    # Create dummy data for testing
-    df = pd.DataFrame({
-        'SE_id': np.random.randint(0, 10, 100),
-        'Drug_smile': ['CCO'] * 100,
-        'Label': np.random.randint(0, 2, 100)
-    })
-    
-    indices = np.arange(100)
-    labels = df['Label'].values
-    se_index = np.random.randint(0, 100, (994, 50))
-    se_mask = np.ones((994, 50))
-    
-    # Dummy SMILES encoder
-    def dummy_encoder(smile):
-        return np.random.randint(0, 2586, 50), np.ones(50)
-    
-    # Create dataset
-    dataset = DrugSideEffectDataset(
-        df=df,
-        indices=indices,
-        labels=labels,
-        se_index=se_index,
         se_mask=se_mask,
-        smiles_encoder=dummy_encoder,
-        fold=0,
-        cache_encoded=True
+        balance_train=True # Enforce HSTrans requirement
     )
-    
-    print(f"Dataset size: {len(dataset)}")
-    print(f"Statistics: {dataset.get_statistics()}")
-    
-    # Test dataloader
-    dataloader = DataLoader(
-        dataset,
-        batch_size=16,
-        shuffle=True,
-        num_workers=0
-    )
-    
-    # Test batch
-    batch = next(iter(dataloader))
-    drug, se, drug_mask, se_mask, label = batch
-    
-    print(f"\nBatch shapes:")
-    print(f"Drug: {drug.shape}")
-    print(f"SE: {se.shape}")
-    print(f"Drug mask: {drug_mask.shape}")
-    print(f"SE mask: {se_mask.shape}")
-    print(f"Label: {label.shape}")
-    
-    print("\nDataset test passed!")
+
+    return data_module.train_dataloader(), data_module.val_dataloader()
