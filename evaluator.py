@@ -106,6 +106,37 @@ class Evaluator:
         SCC (Spearman) is calculated on the full test set N (Equation 19),
         which includes both positive and negative (0) samples[cite: 279, 294].
         """
+
+        # =========================================================
+        # [DEBUG CODE] BẮT ĐẦU: Kiểm tra phân phối dữ liệu
+        # =========================================================
+        print("\n" + "!"*50)
+        print("DEBUG: KIỂM TRA DỰ ĐOÁN (PREDICTIONS CHECK)")
+        print(f"Sample Size: {len(predictions)}")
+        
+        # 1. Xem 20 mẫu đầu tiên để so sánh trực quan
+        print(f"\nTop 20 True Labels: {labels[:20]}")
+        print(f"Top 20 Predictions: {predictions[:20]}")
+        
+        # 2. Kiểm tra thống kê (Quan trọng để bắt lỗi Collapsing)
+        print(f"\nThống kê Labels (Thực tế):")
+        print(f"  Min: {labels.min():.4f} | Max: {labels.max():.4f} | Mean: {labels.mean():.4f}")
+        
+        print(f"Thống kê Preds  (Dự đoán):")
+        print(f"  Min: {predictions.min():.4f} | Max: {predictions.max():.4f}")
+        print(f"  Mean: {predictions.mean():.4f} | Std (Độ lệch chuẩn): {predictions.std():.4f}")
+        
+        if predictions.std() < 0.01:
+            print("\n>>> CẢNH BÁO: Std quá thấp! Mô hình đang bị 'Collapse' (Dự đoán toàn bộ giống nhau).")
+            print(">>> Nguyên nhân có thể: Learning Rate quá lớn, hoặc dữ liệu Train chưa cân bằng.")
+        else:
+            print("\n>>> TRẠNG THÁI: Std ổn định. Mô hình có sự phân biệt giữa các mẫu.")
+            
+        print("!"*50 + "\n")
+        # =========================================================
+        # [DEBUG CODE] KẾT THÚC
+        # =========================================================
+
         # MSE and RMSE [cite: 287]
         mse = mean_squared_error(labels, predictions)
         rmse = np.sqrt(mse)

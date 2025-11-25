@@ -219,3 +219,4 @@ logs/
 checkpoints/
 data/cache
 data/processed
+outputs/
