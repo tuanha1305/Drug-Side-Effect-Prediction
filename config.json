@@ -30,13 +30,14 @@
         "hidden_dropout": 0.1,
         "decoder_hidden_dims": [
             512,
-            304
+            64,
+            32
         ],
         "decoder_input_dim": 23040,
         "decoder_output_dim": 1,
         "decoder_dropout": 0.3,
         "use_batch_norm": true,
-        "use_cross_attention": false,
+        "use_cross_attention": true,
         "conv_in_channels": 1,
         "conv_out_channels": 10,
         "conv_kernel_size": 3,
